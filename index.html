@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#073d32">
+<title>GastoFolio | Mis gastos, en orden</title>
+<link rel="icon" type="image/png" href="./icon.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
+<style>
+
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#173c32;background:#f7f6ed}*{box-sizing:border-box}
+body{margin:0;padding:20px 14px;background:radial-gradient(circle at 10% 0%,#dcebe0 0,transparent 30%),linear-gradient(135deg,#f7f6ed,#fffaf4 60%);min-height:100vh}
+.wrap{max-width:1000px;margin:0 auto}.card{background:#fffefa;border:1px solid #e6e8dc;border-radius:22px;padding:20px;margin:14px 0;box-shadow:0 8px 28px #083d2b0c}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-size:27px;color:#073d32;margin:6px 0}h2{font-size:19px;margin:0 0 12px;color:#163d30}.muted{color:#677770;font-size:13px;line-height:1.5}
+label{display:block;font-weight:650;margin:11px 0 4px}input,select,textarea,button{font:inherit}
+input,select,textarea{display:block;width:100%;padding:13px;border:1px solid #cdd8cf;border-radius:12px;background:#fff;color:#183b32}input:focus,select:focus,textarea:focus{outline:2px solid #70b9a2;outline-offset:2px}
+textarea{min-height:85px;resize:vertical}input[type=file]{padding:9px}
+button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer;text-decoration:none;text-align:center}button:disabled{opacity:.55;cursor:not-allowed}.secondary{background:#e8f2e8;color:#185b42}.danger{background:#bf5d4e;color:#fff}.ghost{background:white;border:1px solid #cbd7d0;color:#185b42}
+.row{display:flex;align-items:center;flex-wrap:wrap;gap:9px}.row>*{flex:0 0 auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}.hidden{display:none!important}
+.status{padding:12px;border-radius:12px;background:#eaf4f0;color:#20594c;font-size:14px;line-height:1.5;margin:12px 0;white-space:pre-wrap}.status.error{background:#fff0ec;color:#9c3730}.status.ok{background:#e5f5e9;color:#175a33}
+.sum{background:#ecf6ee;padding:16px;border-radius:15px;border:1px solid #d8eadb}.sum small{display:block;color:#51695e}.sum strong{font-size:22px;color:#0a604a}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:12px}.expenses{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.expense{border:1px solid #dfe7dc;border-radius:15px;padding:15px;background:#fff}.expense-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.pill{font-size:12px;background:#e7f3e7;color:#235b3e;border-radius:20px;padding:5px 9px;font-weight:750}.expense .amount{font-weight:850;font-size:21px;margin:10px 0 5px}.expense .note{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:20px}.expense .meta{font-size:12px;color:#6e7f75;margin:6px 0}.expense .row button{font-size:12px;padding:9px 10px}.annulled{opacity:.62}
+.photo-box{background:#f4faf4;border:1px dashed #a9c8b5;border-radius:14px;padding:12px}.photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.photo-actions label{margin:0}.photo-actions input{position:absolute;left:-9999px;max-width:1px;opacity:0}.photo-actions span{display:block;padding:12px;border:1px solid #bfd9ca;border-radius:10px;text-align:center;background:#fff;color:#19593c;font-weight:750;font-size:14px;cursor:pointer}
+#photoPreview{max-width:100%;max-height:260px;border-radius:8px;display:block;margin:10px auto}.preview{background:#f1f8ef;border-radius:12px;padding:12px;margin-top:12px}.preview img{display:block;max-width:100%;max-height:65vh;margin:auto;border-radius:8px}.preview .row{justify-content:flex-end}
+.logo{display:block;width:min(390px,100%);height:auto;border-radius:15px}.logo-small{display:block;width:min(290px,100%);height:auto;border-radius:10px}.hero{background:#f9faf2;display:flex;align-items:center;justify-content:space-between;gap:22px}.intro{border-left:4px solid #f17860;padding-left:12px}.login-layout{max-width:470px;margin:7vh auto 0}.login-layout .card{padding:24px}.login-layout h2{font-size:22px}.login-fields{margin-top:18px}.login-fields button{width:100%;margin-top:16px}.login-logo{display:block;max-width:100%;width:430px;margin:auto}.tiny{font-size:12px;color:#587568}.tag{display:inline-flex;border-radius:99px;background:#ebeee7;color:#2c644a;padding:7px 10px;font-size:12px;font-weight:700}
+@media(max-width:500px){body{padding:10px}.card{padding:15px}.filters{grid-template-columns:1fr}.row button,.row .btn{flex:1}.expenses{grid-template-columns:1fr}h1{font-size:23px}.login-layout{margin:3vh auto 0}.hero{align-items:flex-start}.logo-small{max-width:250px}}
+</style>
+</head>
+<body><main class="wrap">
+<div id="loginArea" class="login-layout">
+ <section class="card">
+  <img src="./logo.png" class="login-logo" alt="GastoFolio, mis gastos en orden">
+  <p style="text-align:center" class="muted">Tu archivo privado de recibos, gastos y fotografías.</p>
+  <h2 style="margin-top:22px">Entrar a mis gastos</h2>
+  <p class="muted">Utiliza tu correo y la contraseña exclusiva de GastoFolio. No es la contraseña de PIPE NET.</p>
+  <form id="loginForm" class="login-fields" autocomplete="on">
+   <label for="loginEmail">Correo electrónico</label><input id="loginEmail" type="email" autocomplete="username" required placeholder="tu@correo.com">
+   <label for="loginPassword">Contraseña personal</label><input id="loginPassword" type="password" autocomplete="current-password" required minlength="8" placeholder="Tu contraseña de GastoFolio">
+   <button id="loginButton" type="submit">Entrar a GastoFolio</button>
+  </form>
+  <div id="accessStatus" class="status" aria-live="polite">Preparando acceso privado...</div>
+  <p class="tiny">Por seguridad, solo el propietario autorizado puede consultar o guardar información. No hay registro público de usuarios.</p>
+ </section>
+</div>
+<header class="card hero hidden" id="appHeader"><div><img class="logo-small" src="./logo.png" alt="GastoFolio"><div class="muted intro">Mis gastos, en orden · Archivo privado de comprobantes</div></div><button type="button" id="exitButton" class="secondary">Cerrar sesión</button></header>
+<section id="gastosApp" class="hidden">
+  <div class="card"><div class="grid"><div class="sum"><small>Total activo mostrado</small><strong id="sumTotal">$0</strong></div><div class="sum"><small>Comprobantes con foto</small><strong id="sumPhotos">0</strong></div><div class="sum"><small>Registros mostrados</small><strong id="sumCount">0</strong></div></div><p class="muted">Cada gasto tiene dos meses de conservación desde su registro. La eliminación automática todavía no está activada. Fecha y hora de Colombia. Descarga tus PDFs antes del vencimiento.</p></div>
+  <section class="card"><h2>➕ Registrar nuevo gasto</h2><form id="expenseForm"><div class="grid"><div><label for="categoria">Categoría</label><select id="categoria" required><option value="comida">🍽️ Comida</option><option selected value="combustible">⛽ Combustible</option><option value="peajes">🎟️ Peajes</option><option value="calibracion_llantas">🛞 Calibración de llantas</option><option value="agua">💧 Agua</option><option value="otros">📁 Otros</option></select></div><div><label for="valor">Valor del gasto (COP)</label><input id="valor" inputmode="numeric" type="number" min="1" max="999999999999" step="1" placeholder="Ej. 50000" required></div></div><label for="nota">Nota o descripción</label><textarea id="nota" maxlength="500" placeholder="Ej. Tanqueo de motocicleta"></textarea><div class="photo-box"><strong>📷 Comprobante (opcional)</strong><p class="muted">Puedes tomar la foto o seleccionar una de tu galería. Se comprimirá a WebP, manteniendo buena resolución para leer fechas y valores.</p><div class="photo-actions"><label for="captureCamera"><span>📸 Tomar foto</span><input type="file" id="captureCamera" accept="image/*" capture="environment"></label><label for="chooseGallery"><span>🖼️ Galería</span><input type="file" id="chooseGallery" accept="image/*"></label></div><div id="fileLabel" class="muted" style="margin-top:9px">Ninguna fotografía seleccionada</div><img id="photoPreview" alt="Vista previa del recibo" class="hidden"><button id="clearPhoto" type="button" class="secondary hidden">Quitar foto</button></div><div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">Guardar gasto</button></div></form><div id="saveStatus" class="status" aria-live="polite">La fecha, la hora y el vencimiento se asignan desde Supabase.</div></section>
+  <section class="card"><h2>📂 Historial por categorías</h2><div class="filters"><div><label for="filterCategoria">Categoría</label><select id="filterCategoria"><option value="">Todas las categorías</option><option value="comida">Comida</option><option value="combustible">Combustible</option><option value="peajes">Peajes</option><option value="calibracion_llantas">Calibración de llantas</option><option value="agua">Agua</option><option value="otros">Otros</option></select></div><div><label for="filterMes">Mes (opcional)</label><input type="month" id="filterMes"></div></div><div class="row" style="margin-top:13px"><button type="button" id="refreshExpenses" class="secondary">Actualizar</button><button type="button" id="exportPdf">📄 Descargar PDF (una página por gasto)</button><button type="button" id="exportCsv" class="secondary">Descargar informe CSV</button><button type="button" id="exportZip" class="secondary">Descargar gastos + fotos (ZIP)</button></div><p class="muted">El PDF incluirá los gastos visibles según los filtros. Cada gasto tendrá una página A4 con su fotografía, categoría, valor, fecha y hora, y observaciones. También puedes descargar el PDF de un solo gasto. Si necesitas conservar el original, descarga antes de la fecha de vencimiento.</p><div id="listStatus" class="status" aria-live="polite">Consultando registros…</div><div class="expenses" id="expensesList"></div></section>
+</section>
+<section id="previewModal" class="card hidden preview" aria-label="Vista previa del comprobante"><div class="row"><button id="closePreview" type="button" class="secondary">Cerrar foto</button><a id="downloadPreview" class="btn" download="comprobante.webp">Descargar foto</a></div><img id="previewImage" alt="Foto del comprobante"></section>
+<input id="attachPhoto" type="file" accept="image/*" class="hidden" aria-label="Adjuntar foto a un gasto existente">
+</main>
+<script>
+'use strict';
+// La clave publicable puede estar en un frontend; nunca usar service_role aquí.
+const CONFIG = window.GASTOFOLIO_CONFIG || {};
+const CONFIG_OK = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(CONFIG.url||'') && /^(sb_publishable_|eyJ)/.test(CONFIG.publishableKey||'');
+const db = CONFIG_OK ? supabase.createClient(CONFIG.url,CONFIG.publishableKey) : null;
+const $=id=>document.getElementById(id);
+const categories={comida:'🍽️ Comida',combustible:'⛽ Combustible',peajes:'🎟️ Peajes',calibracion_llantas:'🛞 Calibración de llantas',agua:'💧 Agua',otros:'📁 Otros'};
+const cop=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(Number(n)||0);
+const dt=s=>new Intl.DateTimeFormat('es-CO',{timeZone:'America/Bogota',dateStyle:'medium',timeStyle:'short'}).format(new Date(s));
+const dateForExport=s=>new Intl.DateTimeFormat('es-CO',{timeZone:'America/Bogota',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s));
+const html=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let me=null,entries=[],photoFile=null,photoObjectUrl=null,previewObjectUrl=null,attachExpenseId=null,busy=false;
+const setState=(id,msg,type='')=>{let el=$(id);el.textContent=msg;el.className='status'+(type?' '+type:'')};
+function shortName(file){return file?.name||'recibo.jpg'}
+function clearSelectedPhoto(){photoFile=null;if(photoObjectUrl)URL.revokeObjectURL(photoObjectUrl);photoObjectUrl=null;$('photoPreview').classList.add('hidden');$('photoPreview').removeAttribute('src');$('fileLabel').textContent='Ninguna fotografía seleccionada';$('clearPhoto').classList.add('hidden');$('captureCamera').value='';$('chooseGallery').value=''}
+function selectPhoto(file){if(!file)return;if(!file.type.startsWith('image/')){setState('saveStatus','Selecciona una imagen válida.','error');return}photoFile=file;if(photoObjectUrl)URL.revokeObjectURL(photoObjectUrl);photoObjectUrl=URL.createObjectURL(file);$('photoPreview').src=photoObjectUrl;$('photoPreview').classList.remove('hidden');$('clearPhoto').classList.remove('hidden');$('fileLabel').textContent=shortName(file)+' · '+(file.size/1024/1024).toFixed(2)+' MB (original)'}
+$('captureCamera').addEventListener('change',e=>selectPhoto(e.target.files[0]));
+$('chooseGallery').addEventListener('change',e=>selectPhoto(e.target.files[0]));
+$('clearPhoto').onclick=clearSelectedPhoto;
+function imageLoad(file){return new Promise((resolve,reject)=>{const img=new Image(),src=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(src);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(src);reject(new Error('No se pudo abrir la fotografía.'))};img.src=src})}
+function encodeWebp(canvas,quality){return new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality))}
+async function compressWebp(file){const img=await imageLoad(file);let longest=2200;for(let attempt=0;attempt<6;attempt++){const scale=Math.min(1,longest/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingQuality='high';ctx.drawImage(img,0,0,canvas.width,canvas.height);const blob=await encodeWebp(canvas,attempt<2?.9:.82);if(blob?.type==='image/webp'&&blob.size<=3*1024*1024)return blob;longest=Math.round(longest*.82)}throw new Error('No fue posible preparar una imagen WebP de máximo 3 MB. Intenta otra foto.')}
+async function confirmOwner(){
+ if(!navigator.onLine)throw Error('Necesitas conexión para entrar y registrar gastos.');
+ const {data:u,error:ue}=await db.auth.getUser();
+ if(ue||!u?.user)throw Error('Inicia sesión con tu cuenta personal de GastoFolio.');
+ const {data:owner,error:oe}=await db.rpc('gastofolio_is_owner');
+ if(oe||owner!==true)throw Error('Esta cuenta no tiene permiso de propietario.');
+ me=u.user;
+ $('loginArea').classList.add('hidden');
+ $('appHeader').classList.remove('hidden');
+ $('gastosApp').classList.remove('hidden');
+ await refresh();
+}
+
+function monthBogota(timestamp){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Bogota',year:'numeric',month:'2-digit'}).formatToParts(new Date(timestamp));return parts.find(x=>x.type==='year').value+'-'+parts.find(x=>x.type==='month').value}
+function filtered(){const c=$('filterCategoria').value,m=$('filterMes').value;return entries.filter(x=>(!c||x.categoria===c)&&(!m||monthBogota(x.fecha_gasto)===m))}
+function render(){const visible=filtered();const active=visible.filter(x=>!x.anulado);$('sumTotal').textContent=cop(active.reduce((v,x)=>v+Number(x.valor_cop),0));$('sumPhotos').textContent=visible.filter(x=>!!x.comprobante_ruta).length;$('sumCount').textContent=visible.length;const target=$('expensesList');target.innerHTML='';for(const x of visible){const item=document.createElement('article');item.className='expense'+(x.anulado?' annulled':'');item.innerHTML='<div class="expense-top"><span class="pill">'+html(categories[x.categoria]||x.categoria)+'</span><span class="muted">'+(x.anulado?'Anulado':'Activo')+'</span></div><div class="amount">'+html(cop(x.valor_cop))+'</div><div class="note">'+html(x.nota||'Sin nota')+'</div><div class="meta">📅 '+html(dt(x.registrado_en))+'</div><div class="meta">Vence: '+html(dt(x.expira_en))+'</div><div class="row"><button type="button" class="secondary" data-action="'+(x.comprobante_ruta?'view':'attach')+'" data-id="'+html(x.id)+'">'+(x.comprobante_ruta?'📷 Ver recibo':'📷 Adjuntar foto')+'</button><button type="button" class="secondary" data-action="pdf" data-id="'+html(x.id)+'">📄 PDF</button><button type="button" class="'+(x.anulado?'secondary':'danger')+'" data-action="toggle" data-id="'+html(x.id)+'">'+(x.anulado?'Reactivar':'Anular')+'</button></div>';target.appendChild(item)}setState('listStatus',visible.length+' gastos encontrados. '+(entries.length>=1000?'Se muestran como máximo 1000 registros; aplica filtros o contacta soporte si tienes más.':'Puedes filtrar por categoría y mes.'),'')}
+async function refresh(){const btn=$('refreshExpenses');btn.disabled=true;setState('listStatus','Consultando gastos en Supabase…');try{const {data,error}=await db.from('gastofolio_gastos').select('id,categoria,valor_cop,nota,registrado_en,fecha_gasto,expira_en,comprobante_ruta,anulado').order('registrado_en',{ascending:false}).limit(1000);if(error)throw error;entries=data||[];render()}catch(e){setState('listStatus','No se pudieron consultar los gastos: '+e.message,'error')}finally{btn.disabled=false}}
+async function attachReceipt(entry,file){if(!file)return;const path=me.id+'/'+entry.id+'/recibo.webp';let exists=false;const probe=await db.storage.from('gastofolio-recibos').download(path);if(!probe.error)exists=true;if(!exists){const blob=await compressWebp(file);const uploaded=await db.storage.from('gastofolio-recibos').upload(path,blob,{upsert:false,contentType:'image/webp'});if(uploaded.error)throw new Error('No se pudo subir el recibo: '+uploaded.error.message)}const {error:upError}=await db.from('gastofolio_gastos').update({comprobante_ruta:path}).eq('id',entry.id);if(upError)throw new Error('El archivo puede haberse guardado pero no quedó asociado al gasto: '+upError.message);return path}
+$('expenseForm').addEventListener('submit',async event=>{event.preventDefault();if(busy)return;const value=Number($('valor').value);if(!Number.isSafeInteger(value)||value<=0){setState('saveStatus','Escribe un valor entero positivo en pesos colombianos.','error');return}if(!me){setState('saveStatus','No hay sesión verificada.','error');return}busy=true;$('saveExpense').disabled=true;let inserted=null;try{setState('saveStatus','Guardando gasto en Supabase…');const id=crypto.randomUUID();const {data,error}=await db.from('gastofolio_gastos').insert({id,categoria:$('categoria').value,valor_cop:value,nota:$('nota').value.trim()||null}).select('id').single();if(error)throw error;inserted=data;const hadPhoto=!!photoFile;if(hadPhoto){setState('saveStatus','Gasto registrado. Subiendo fotografía…');await attachReceipt(data,photoFile)}$('valor').value='';$('nota').value='';clearSelectedPhoto();setState('saveStatus','✅ Gasto guardado correctamente'+(hadPhoto?' con fotografía.':'.'),'ok');await refresh()}catch(e){setState('saveStatus',(inserted?'El gasto se registró, pero la foto necesita revisión. ':'No se pudo guardar el gasto. ')+e.message+(inserted?' Puedes intentar adjuntar la foto desde el historial.':''),'error');if(inserted)await refresh()}finally{busy=false;$('saveExpense').disabled=false}});
+$('expensesList').addEventListener('click',async event=>{const button=event.target.closest('button[data-action]');if(!button)return;const expense=entries.find(x=>x.id===button.dataset.id);if(!expense)return;button.disabled=true;try{if(button.dataset.action==='attach'){attachExpenseId=expense.id;$('attachPhoto').click()}else if(button.dataset.action==='view'){setState('listStatus','Descargando recibo privado…');const {data,error}=await db.storage.from('gastofolio-recibos').download(expense.comprobante_ruta);if(error)throw error;if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=URL.createObjectURL(data);$('previewImage').src=previewObjectUrl;$('downloadPreview').href=previewObjectUrl;$('downloadPreview').download='recibo-'+expense.id+'.webp';$('previewModal').classList.remove('hidden');$('previewModal').scrollIntoView({behavior:'smooth'});setState('listStatus','Comprobante consultado correctamente.','ok')}else if(button.dataset.action==='pdf'){await exportPdf([expense],button)}else if(button.dataset.action==='toggle'){if(!confirm((expense.anulado?'¿Reactivar':'¿Anular')+' este gasto? No se elimina el registro ni la fotografía.'))return;const {error}=await db.from('gastofolio_gastos').update({anulado:!expense.anulado}).eq('id',expense.id);if(error)throw error;await refresh()}}catch(e){setState('listStatus','No se pudo realizar la operación: '+e.message,'error')}finally{button.disabled=false}});
+$('attachPhoto').addEventListener('change',async e=>{const file=e.target.files[0];const expense=entries.find(x=>x.id===attachExpenseId);e.target.value='';if(!file||!expense)return;setState('listStatus','Preparando y subiendo comprobante…');try{await attachReceipt(expense,file);setState('listStatus','Fotografía asociada al gasto.','ok');await refresh()}catch(err){setState('listStatus','No se pudo adjuntar el comprobante: '+err.message,'error')}});
+$('closePreview').onclick=()=>{$('previewModal').classList.add('hidden');$('previewImage').removeAttribute('src');if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null};
+$('filterCategoria').onchange=render;$('filterMes').onchange=render;$('refreshExpenses').onclick=refresh;
+// PDF con comprobantes: exactamente una página A4 por gasto, sin recortar la fotografía.
+let pdfScriptPromise=null;
+function loadJsPDF(){
+  if(window.jspdf?.jsPDF)return Promise.resolve(window.jspdf.jsPDF);
+  if(pdfScriptPromise)return pdfScriptPromise;
+  pdfScriptPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.async=true;
+    script.onload=()=>window.jspdf?.jsPDF?resolve(window.jspdf.jsPDF):reject(Error('No se cargó correctamente la librería PDF.'));
+    script.onerror=()=>reject(Error('No se pudo cargar el generador de PDF. Revisa tu conexión.'));
+    document.head.appendChild(script);
+  }).catch(e=>{pdfScriptPromise=null;throw e});
+  return pdfScriptPromise;
+}
+function pdfCategory(c){return ({comida:'Comida',combustible:'Combustible',peajes:'Peajes',calibracion_llantas:'Calibración de llantas',agua:'Agua',otros:'Otros'})[c]||c}
+async function receiptJpeg(blob){
+  // Se convierte la foto privada WebP a JPEG para compatibilidad con lectores PDF.
+  const objectUrl=URL.createObjectURL(blob);
+  try{
+    const img=await new Promise((resolve,reject)=>{
+      const el=new Image();
+      el.onload=()=>resolve(el);
+      el.onerror=()=>reject(Error('El archivo de foto no se pudo interpretar.'));
+      el.src=objectUrl;
+    });
+    // Mantener suficiente detalle para poder leer el texto de los recibos.
+    const maxSide=2400;
+    const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
+    const w=Math.max(1,Math.round(img.naturalWidth*scale));
+    const h=Math.max(1,Math.round(img.naturalHeight*scale));
+    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    if(!ctx)throw Error('No se pudo procesar la imagen en este dispositivo.');
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);
+    ctx.drawImage(img,0,0,w,h);
+    const data=canvas.toDataURL('image/jpeg',0.88);
+    canvas.width=1;canvas.height=1;
+    return {data,w,h};
+  }finally{URL.revokeObjectURL(objectUrl)}
+}
+function addExpensePdfPage(doc,g,i,total,image){
+  const pageW=210,pageH=297,margin=15;
+  doc.setFillColor(9,101,78);doc.rect(0,0,pageW,10,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(20,42,72);
+  doc.text('GastoFolio | Comprobante de gasto',margin,21);
+  doc.setTextColor(92,111,138);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text('Archivo digital personal - cada gasto ocupa una página',margin,27);
+  doc.setDrawColor(203,213,227);doc.line(margin,31,pageW-margin,31);
+  doc.setFontSize(10);doc.setTextColor(20,42,72);
+  doc.setFont('helvetica','bold');doc.text('Categoría:',margin,39);
+  doc.setFont('helvetica','normal');doc.text(pdfCategory(g.categoria),37,39);
+  doc.setFont('helvetica','bold');doc.text('Valor:',margin,46);
+  doc.setFont('helvetica','normal');doc.text(cop(g.valor_cop).replace(/\u00a0/g,' '),28,46);
+  doc.setFont('helvetica','bold');doc.text('Fecha del gasto:',margin,53);
+  doc.setFont('helvetica','normal');doc.text(dateForExport(g.fecha_gasto),49,53);
+  doc.setFont('helvetica','bold');doc.text('Registrado:',margin,60);
+  doc.setFont('helvetica','normal');doc.text(dateForExport(g.registrado_en),38,60);
+  doc.setFont('helvetica','bold');doc.text('Estado:',111,60);
+  doc.setFont('helvetica','normal');doc.text(g.anulado?'Anulado':'Activo',126,60);
+  doc.setFont('helvetica','bold');doc.text('Observaciones:',margin,69);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);
+  const note=String(g.nota||'Sin observaciones').replace(/\s+/g,' ').trim();
+  const lines=doc.splitTextToSize(note,pageW-margin*2);
+  const noteY=75;const lineH=4.15;
+  doc.text(lines,margin,noteY,{lineHeightFactor:1.22});
+  const imgTop=Math.max(87,noteY+lines.length*lineH+9);
+  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(71,91,113);
+  doc.text('COMPROBANTE FOTOGRÁFICO',margin,imgTop-3);
+  const areaTop=imgTop+1,areaBottom=278;
+  if(image){
+    const areaW=pageW-margin*2, areaH=areaBottom-areaTop;
+    if(areaH<20)throw Error('Las observaciones ocupan demasiado espacio en la hoja.');
+    const ratio=Math.min(areaW/image.w,areaH/image.h);
+    const iw=image.w*ratio,ih=image.h*ratio;
+    const x=(pageW-iw)/2,y=areaTop+(areaH-ih)/2;
+    doc.addImage(image.data,'JPEG',x,y,iw,ih,undefined,'MEDIUM');
+  }else{
+    doc.setDrawColor(207,218,229);doc.roundedRect(margin,areaTop,pageW-margin*2,Math.min(45,areaBottom-areaTop),3,3);
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(107,120,140);
+    doc.text('Este gasto no tiene fotografía adjunta.',pageW/2,areaTop+24,{align:'center'});
+  }
+  doc.setDrawColor(203,213,227);doc.line(margin,283,pageW-margin,283);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(101,117,139);
+  doc.text('Hora de Colombia | Identificador: '+g.id,margin,289);
+  doc.text('Página '+(i+1)+' de '+total,pageW-margin,289,{align:'right'});
+}
+async function exportPdf(rows,button){
+  if(!rows.length){setState('listStatus','No hay gastos para exportar a PDF.','error');return}
+  if(rows.length>80){setState('listStatus','Para evitar sobrecargar el celular, descarga máximo 80 gastos por PDF. Filtra por mes o categoría.','error');return}
+  if(button)button.disabled=true;
+  try{
+    setState('listStatus','Preparando PDF. Cada gasto tendrá una hoja individual…');
+    const JsPDF=await loadJsPDF();
+    const doc=new JsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+    for(let i=0;i<rows.length;i++){
+      const g=rows[i];
+      setState('listStatus','Preparando hoja '+(i+1)+' de '+rows.length+'…');
+      let image=null;
+      if(g.comprobante_ruta){
+        const {data,error}=await db.storage.from('gastofolio-recibos').download(g.comprobante_ruta);
+        if(error)throw Error('No se pudo descargar la fotografía del gasto '+g.id+': '+error.message);
+        image=await receiptJpeg(data);
+      }
+      if(i>0)doc.addPage('a4','portrait');
+      addExpensePdfPage(doc,g,i,rows.length,image);
+    }
+    const filename='GastoFolio_comprobantes_'+new Date().toISOString().slice(0,10)+(rows.length===1?'_'+rows[0].id.slice(0,8):'')+'.pdf';
+    const blob=doc.output('blob');
+    saveBlob(blob,filename);
+    setState('listStatus','✅ PDF descargado: '+rows.length+' hoja(s). Verifica que las fotos y los datos se lean antes de borrar sus originales.','ok');
+  }catch(e){
+    setState('listStatus','No se pudo completar el PDF: '+e.message+'. Los registros originales permanecen sin cambios.','error');
+  }finally{if(button)button.disabled=false}
+}
+$('exportPdf').onclick=()=>exportPdf(filtered(),$('exportPdf'));
+
+function csvEscape(v){let s=String(v??'');if(/^[\s]*[=+@\-]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"'}
+function makeCSV(rows){const headers=['Categoria','Valor COP','Nota','Fecha y hora Colombia','Vencimiento Colombia','Estado','Tiene foto'];const content=rows.map(x=>[categories[x.categoria]||x.categoria,x.valor_cop,x.nota||'',dateForExport(x.registrado_en),dateForExport(x.expira_en),x.anulado?'Anulado':'Activo',x.comprobante_ruta?'Sí':'No'].map(csvEscape).join(';'));return '\uFEFF'+[headers.map(csvEscape).join(';'),...content].join('\r\n')}
+function saveBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+$('exportCsv').onclick=()=>{const arr=filtered();if(!arr.length){setState('listStatus','No hay gastos para exportar.','error');return}saveBlob(new Blob([makeCSV(arr)],{type:'text/csv;charset=utf-8'}),'GastoFolio_gastos_'+new Date().toISOString().slice(0,10)+'.csv');setState('listStatus','Informe CSV descargado. Las fotografías se descargan por separado o en el ZIP.','ok')};
+function loadJSZip(){return new Promise((resolve,reject)=>{if(window.JSZip)return resolve(window.JSZip);const script=document.createElement('script');script.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';script.onload=()=>resolve(window.JSZip);script.onerror=()=>reject(Error('No fue posible cargar la herramienta ZIP. Revisa tu conexión.'));document.head.appendChild(script)})}
+$('exportZip').onclick=async()=>{const arr=filtered();if(!arr.length){setState('listStatus','No hay gastos para respaldar.','error');return}const photos=arr.filter(x=>x.comprobante_ruta);if(photos.length>150){setState('listStatus','Hay más de 150 fotografías. Filtra por mes o categoría para hacer respaldos más pequeños.','error');return}const button=$('exportZip');button.disabled=true;try{const Zip=await loadJSZip(),zip=new Zip();zip.file('informe_gastos.csv',makeCSV(arr));for(let i=0;i<photos.length;i++){const g=photos[i];setState('listStatus','Descargando fotografías privadas: '+(i+1)+' de '+photos.length+'…');const {data,error}=await db.storage.from('gastofolio-recibos').download(g.comprobante_ruta);if(error)throw Error('Fallo la descarga del comprobante '+g.id+': '+error.message);zip.file('comprobantes/'+g.categoria+'/'+g.id+'.webp',data)}setState('listStatus','Preparando archivo ZIP…');const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:3}});saveBlob(blob,'GastoFolio_respaldo_gastos_'+new Date().toISOString().slice(0,10)+'.zip');setState('listStatus','✅ Respaldo ZIP descargado. Comprueba que se abre y conserva otra copia fuera de GastoFolio.','ok')}catch(e){setState('listStatus','No se pudo completar el ZIP: '+e.message+'. No se eliminó ningún gasto.','error')}finally{button.disabled=false}};
+
+$('loginForm').addEventListener('submit',async(e)=>{
+ e.preventDefault();
+ if(!CONFIG_OK){setState('accessStatus','Falta configurar el nuevo proyecto de Supabase en config.js.','error');return;}
+ const button=$('loginButton');button.disabled=true;
+ setState('accessStatus','Comprobando correo, contraseña y permisos...');
+ try{
+   const {error}=await db.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});
+   $('loginPassword').value='';
+   if(error)throw Error('Correo o contraseña incorrectos, o acceso no habilitado.');
+   try{await confirmOwner()}catch(e){await db.auth.signOut();throw e}
+ }catch(e){setState('accessStatus',e.message,'error')}
+ finally{button.disabled=false}
+});
+$('exitButton').addEventListener('click',async()=>{
+ await db.auth.signOut();
+ me=null; entries=[];clearSelectedPhoto();
+ $('appHeader').classList.add('hidden');
+ $('gastosApp').classList.add('hidden');
+ $('loginArea').classList.remove('hidden');
+ setState('accessStatus','Sesión cerrada. Ingresa para consultar tus gastos.');
+});
+(async()=>{
+ if(!CONFIG_OK){setState('accessStatus','Configuración pendiente: debes crear el nuevo proyecto de Supabase y completar config.js.','error');return}
+ try{
+   const {data:{session}}=await db.auth.getSession();
+   if(session){try{await confirmOwner()}catch(e){await db.auth.signOut();setState('accessStatus',e.message,'error')}}
+   else setState('accessStatus','Introduce tu correo y contraseña personal.');
+ }catch(e){setState('accessStatus','No se pudo verificar la sesión: '+e.message,'error')}
+})();
+</script>
+</body></html>
