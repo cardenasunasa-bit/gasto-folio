@@ -1,7 +1,7 @@
-/* GastoFolio V3 — caché solamente de archivos estáticos públicos.
+/* GastoFolio V4 — caché solamente de archivos estáticos públicos.
    Nunca almacena consultas de Supabase, tokens ni archivos privados.
 */
-const CACHE='gastofolio-shell-v3-20261125';
+const CACHE='gastofolio-shell-v4-20261125';
 const APP=['./','./index.html','./config.js','./offline.js','./logo.png','./icon.png','./manifest.webmanifest'];
 const VENDORS=[
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',

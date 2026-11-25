@@ -1,10 +1,10 @@
-/* GastoFolio V3: cola local duradera de gastos/fotos y documentos.
+/* GastoFolio V4: cola local duradera de gastos/fotos y documentos.
    No almacena contraseñas ni utiliza service_role. Los archivos quedan en
    IndexedDB del dispositivo hasta que Supabase confirme la sincronización.
 */
 'use strict';
 window.GFOffline = (() => {
-  const DB_NAME = 'gastofolio_v3_local';
+  const DB_NAME = 'gastofolio_v3_local'; // Mantener base local V3: NO perder pendientes
   let opened, client=null, getUser=null, compress=null, refresh=null, setState=null;
   let working=false, lastError='';
   const state = { documentToAttach: null };
@@ -46,6 +46,7 @@ window.GFOffline = (() => {
     const all=await tx('jobs','readonly',s=>s.getAll());
     return (all||[]).filter(x=>x.uid===uid).sort((a,b)=>a.created.localeCompare(b.created));
   }
+  async function getPendingDeletedIds(uid){return (await getJobs(uid)).filter(j=>j.kind==='delete_expense').map(j=>j.expenseId)}
   const putCache=(id,data)=>tx('cache','readwrite',s=>s.put({id,data}));
   async function getCache(id){const r=await tx('cache','readonly',s=>s.get(id));return r?.data||[];}
   function userId(){const id=getUser?.()?.id;if(!id)throw Error('Debes entrar a tu cuenta de GastoFolio antes de guardar.');return id;}
@@ -57,7 +58,8 @@ window.GFOffline = (() => {
   }
   function label(j){
     if(j.kind==='expense')return 'Gasto · '+j.payload.categoria+' · $'+j.payload.valor_cop;
-    if(j.kind==='attach')return 'Foto adicional de gasto';
+    if(j.kind==='attach')return 'Comprobante adicional de gasto';
+    if(j.kind==='delete_expense')return 'Eliminación definitiva de gasto · '+j.expenseId;
     if(j.kind==='document')return (j.payload.tipo==='rut'?'RUT':j.payload.tipo==='cuenta_cobro'?'Cuenta de cobro':'Documento')+' · '+j.payload.establecimiento;
     if(j.kind==='doc_file')return 'Archivo PDF o foto para un documento pendiente';
     return j.kind;
@@ -72,6 +74,18 @@ window.GFOffline = (() => {
         const div=document.createElement('div');div.className='queue-card';
         // Solo metadatos; nunca insertar fotos privadas en HTML.
         div.innerHTML='<strong>⏳ '+escape(label(j))+'</strong><div class="muted">Guardado en el teléfono · '+escape(new Date(j.created).toLocaleString('es-CO'))+(j.blob?' · Archivo pendiente de subir':'')+'</div>';
+        if(j.kind==='expense'){
+          const btn=document.createElement('button');btn.type='button';btn.className='danger';
+          btn.textContent='🗑️ Eliminar gasto pendiente';
+          btn.onclick=async()=>{
+            if(!confirm('¿Eliminar este gasto pendiente y su archivo? Si hubo una subida parcial, GastoFolio también intentará borrarlo de Supabase.'))return;
+            btn.disabled=true;
+            try{await enqueueDeleteExpense({id:j.payload.id}); sync();}
+            catch(e){setState?.('pendingStatus','No se pudo poner en cola la eliminación: '+e.message,'error')}
+            finally{btn.disabled=false}
+          };
+          div.appendChild(btn);
+        }
         container.appendChild(div);
       }
       setState?.('pendingStatus',jobs.length?`${jobs.length} registro(s) pendientes de sincronización. ${lastError?'Último error: '+lastError:''}`:'✅ No hay registros pendientes en este teléfono.',jobs.length?'':'ok');
@@ -85,13 +99,56 @@ window.GFOffline = (() => {
     await displayQueue();
     return job;
   }
-  async function enqueueExpense(payload,blob){
+  async function enqueueExpense(payload,prepared){
     const uid=userId();
-    return persist({id:payload.id,kind:'expense',uid,payload:{...payload,creado_por:uid},blob:blob||null,created:new Date().toISOString()});
+    return persist({id:payload.id,kind:'expense',uid,payload:{...payload,creado_por:uid},
+      blob:prepared?.blob||null,mime:prepared?.mime||null,ext:prepared?.ext||null,
+      created:new Date().toISOString()});
   }
-  async function enqueueAttach(expenseId,blob){
+  async function enqueueAttach(expenseId,prepared){
     const uid=userId();
-    return persist({id:crypto.randomUUID(),kind:'attach',uid,expenseId,blob,created:new Date().toISOString()});
+    const queued=(await getJobs(uid)).some(j=>j.kind==='attach'&&j.expenseId===expenseId);
+    if(queued)throw Error('Ya existe un comprobante pendiente para este gasto.');
+    return persist({id:crypto.randomUUID(),kind:'attach',uid,expenseId,
+      blob:prepared.blob,mime:prepared.mime,ext:prepared.ext,created:new Date().toISOString()});
+  }
+  // Cancelar el gasto pendiente y dejar un tombstone de eliminación; si parte
+  // de la subida llegó al servidor, se borrará al recuperar la conexión.
+  async function enqueueDeleteExpense(expense){
+    const uid=userId(),id=expense?.id;
+    if(!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(id||''))throw Error('Identificador de gasto inválido.');
+    if(working)throw Error('Hay una sincronización en curso; vuelve a intentar cuando termine.');
+    const jobs=await getJobs(uid);
+    const database=await openDb();
+    await new Promise((resolve,reject)=>{
+      const tr=database.transaction(['jobs','cache'],'readwrite');
+      const jobStore=tr.objectStore('jobs'),cacheStore=tr.objectStore('cache');
+      for(const j of jobs){
+        if((j.kind==='expense'&&j.payload.id===id)||(j.kind==='attach'&&j.expenseId===id))jobStore.delete(j.id);
+      }
+      jobStore.put({id:'delete:'+id,kind:'delete_expense',uid,expenseId:id,created:new Date().toISOString()});
+      const get=cacheStore.get('expenses:'+uid);
+      get.onsuccess=()=>{
+        const old=get.result?.data||[];
+        cacheStore.put({id:'expenses:'+uid,data:old.filter(x=>x.id!==id)});
+      };
+      const docGet=cacheStore.get('docs:'+uid);
+      docGet.onsuccess=()=>{
+        const old=docGet.result?.data||[];
+        cacheStore.put({id:'docs:'+uid,data:old.map(d=>d.gasto_id===id?{...d,gasto_id:null}:d)});
+      };
+      tr.oncomplete=resolve;
+      tr.onerror=()=>reject(tr.error||Error('No se pudo guardar la eliminación en el teléfono.'));
+      tr.onabort=()=>reject(tr.error||Error('Error guardando el borrado.'));
+    });
+    // Los documentos separados que aún estén pendientes conservan sus archivos.
+    // Solo dejamos de asociarlos al gasto eliminado.
+    for(const j of jobs){
+      if(j.kind==='document'&&j.payload?.gasto_id===id){
+        j.payload.gasto_id=null;await putJob(j);
+      }
+    }
+    await displayQueue();
   }
   async function prepareDocument(file,convert){
     if(!file)return null;
@@ -149,11 +206,34 @@ window.GFOffline = (() => {
     const {data:existing,error:fetchError}=await client.from(table).select('*').eq('id',payload.id).maybeSingle();
     if(fetchError||!existing||existing.creado_por!==payload.creado_por)throw Error('ID duplicado sin permiso para recuperar: '+payload.id);
   }
-  async function linkReceipt(uid,id,blob){
-    const path=uid+'/'+id+'/recibo.webp';
-    await safeUpload('gastofolio-recibos',path,blob,'image/webp');
-    const {data:linked,error}=await client.from('gastofolio_gastos').update({comprobante_ruta:path}).eq('id',id).eq('creado_por',uid).select('id').maybeSingle();
-    if(error||!linked)throw Error('Se guardó la foto, pero no se confirmó su asociación al gasto: '+(error?.message||'Registro no encontrado.'));
+  async function linkReceipt(uid,id,blob,mime='image/webp',ext='webp'){
+    if(!['application/pdf','image/webp'].includes(mime)||!['pdf','webp'].includes(ext))throw Error('Formato de comprobante no permitido.');
+    if((mime==='application/pdf')!==(ext==='pdf'))throw Error('Extensión y tipo de archivo no coinciden.');
+    const path=uid+'/'+id+'/recibo.'+ext;
+    await safeUpload('gastofolio-recibos',path,blob,mime);
+    const {data:linked,error}=await client.from('gastofolio_gastos')
+      .update({comprobante_ruta:path,comprobante_tipo:mime})
+      .eq('id',id).eq('creado_por',uid).select('id').maybeSingle();
+    if(error||!linked)throw Error('Archivo guardado, pero no se confirmó la asociación al gasto: '+(error?.message||'Registro no encontrado.'));
+  }
+  async function deleteRemoteExpense(uid,id){
+    const {data:row,error:readError}=await client.from('gastofolio_gastos')
+      .select('id').eq('id',id).eq('creado_por',uid).maybeSingle();
+    if(readError)throw Error('No se pudo comprobar el gasto antes de eliminar: '+readError.message);
+    if(!row)return; // Idempotente: ya eliminado en un intento anterior.
+    // Usar la API Storage, nunca DELETE SQL de storage.objects.
+    const folder=uid+'/'+id;
+    const {error:storageError}=await client.storage.from('gastofolio-recibos')
+      .remove([folder+'/recibo.webp',folder+'/recibo.pdf']);
+    if(storageError)throw Error('No se pudo eliminar el archivo; se conserva el gasto: '+storageError.message);
+    const {data:remaining,error:listError}=await client.storage.from('gastofolio-recibos')
+      .list(folder,{limit:100});
+    if(listError)throw Error('No se pudo confirmar la eliminación de los archivos: '+listError.message);
+    if((remaining||[]).some(f=>f.name==='recibo.webp'||f.name==='recibo.pdf'))
+      throw Error('Aún existe un comprobante en Storage. La eliminación queda pendiente.');
+    const {data:deleted,error:deleteError}=await client.from('gastofolio_gastos')
+      .delete().eq('id',id).eq('creado_por',uid).select('id');
+    if(deleteError||!deleted?.length)throw Error('No se confirmó la eliminación del gasto: '+(deleteError?.message||'El servidor no confirmó el borrado.'));
   }
   async function uploadDoc(uid,id,blob,mime,ext,filename){
     const path=uid+'/'+id+'/documento.'+ext;
@@ -166,9 +246,11 @@ window.GFOffline = (() => {
   async function process(job){
     if(job.kind==='expense'){
       await insertOnce('gastofolio_gastos',job.payload);
-      if(job.blob)await linkReceipt(job.uid,job.payload.id,job.blob);
+      if(job.blob)await linkReceipt(job.uid,job.payload.id,job.blob,job.mime||'image/webp',job.ext||'webp');
     }else if(job.kind==='attach'){
-      await linkReceipt(job.uid,job.expenseId,job.blob);
+      await linkReceipt(job.uid,job.expenseId,job.blob,job.mime||'image/webp',job.ext||'webp');
+    }else if(job.kind==='delete_expense'){
+      await deleteRemoteExpense(job.uid,job.expenseId);
     }else if(job.kind==='document'){
       await insertOnce('gastofolio_documentos',{
         id:job.payload.id,creado_por:job.uid,tipo:job.payload.tipo,
@@ -215,7 +297,7 @@ window.GFOffline = (() => {
   }
   return Object.assign(state,{
     attach,paintNetwork,displayQueue,enqueueExpense,enqueueAttach,prepareDocument,
-    enqueueDocument,enqueueDocFile,saveCachedExpenses,getCachedExpenses,
+    enqueueDocument,enqueueDocFile,enqueueDeleteExpense,getPendingDeletedIds,saveCachedExpenses,getCachedExpenses,
     saveCachedDocs,getCachedDocs,sync
   });
 })();
