@@ -1,12 +1,13 @@
-/* GastoFolio V4 — caché solamente de archivos estáticos públicos.
+/* GastoFolio V5 — caché solamente de archivos estáticos públicos.
    Nunca almacena consultas de Supabase, tokens ni archivos privados.
 */
-const CACHE='gastofolio-shell-v4-20261125';
+const CACHE='gastofolio-shell-v5-20261125';
 const APP=['./','./index.html','./config.js','./offline.js','./logo.png','./icon.png','./manifest.webmanifest'];
 const VENDORS=[
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+  'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js'
 ];
 self.addEventListener('install',evt=>{
  evt.waitUntil((async()=>{

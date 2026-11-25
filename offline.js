@@ -1,4 +1,4 @@
-/* GastoFolio V4: cola local duradera de gastos/fotos y documentos.
+/* GastoFolio V5: cola local duradera de gastos/fotos y documentos.
    No almacena contraseñas ni utiliza service_role. Los archivos quedan en
    IndexedDB del dispositivo hasta que Supabase confirme la sincronización.
 */
@@ -105,6 +105,47 @@ window.GFOffline = (() => {
       blob:prepared?.blob||null,mime:prepared?.mime||null,ext:prepared?.ext||null,
       created:new Date().toISOString()});
   }
+  // Guardar gasto + recibo + todos los documentos en UNA transacción local.
+  // No se anuncia éxito si IndexedDB no pudo almacenar todos los archivos.
+  async function enqueueExpenseBundle(payload,preparedReceipt,docItems=[]){
+    const uid=userId();
+    const createdMs=Date.now();
+    const jobs=[{
+      id:payload.id,kind:'expense',uid,payload:{...payload,creado_por:uid},
+      blob:preparedReceipt?.blob||null,mime:preparedReceipt?.mime||null,
+      ext:preparedReceipt?.ext||null,created:new Date(createdMs).toISOString()
+    }];
+    for(let i=0;i<docItems.length;i++){
+      const {payload:doc,prepared}=docItems[i];
+      if(doc.gasto_id!==payload.id)throw Error('El documento no corresponde al gasto.');
+      jobs.push({
+        id:doc.id,kind:'document',uid,payload:{...doc,creado_por:uid},
+        blob:prepared?.blob||null,mime:prepared?.mime||null,
+        ext:prepared?.ext||null,filename:prepared?.name||null,
+        created:new Date(createdMs+i+1).toISOString()
+      });
+    }
+    const database=await openDb();
+    await new Promise((resolve,reject)=>{
+      const tr=database.transaction('jobs','readwrite');
+      for(const j of jobs)tr.objectStore('jobs').add(j);
+      tr.oncomplete=resolve;
+      tr.onerror=()=>reject(tr.error||Error('No se pudieron guardar todos los archivos.'));
+      tr.onabort=()=>reject(tr.error||Error('No se completó el guardado de gastos y documentos.'));
+    });
+    if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
+    await displayQueue();
+    return jobs;
+  }
+  async function getPendingForExpenseIds(expenseIds){
+    const ids=new Set(expenseIds);
+    return (await getJobs(userId())).filter(j=>
+      (j.kind==='expense'&&ids.has(j.payload.id)) ||
+      (j.kind==='attach'&&ids.has(j.expenseId)) ||
+      (j.kind==='document'&&ids.has(j.payload?.gasto_id)) ||
+      (j.kind==='delete_expense'&&ids.has(j.expenseId))
+    );
+  }
   async function enqueueAttach(expenseId,prepared){
     const uid=userId();
     const queued=(await getJobs(uid)).some(j=>j.kind==='attach'&&j.expenseId===expenseId);
@@ -124,7 +165,7 @@ window.GFOffline = (() => {
       const tr=database.transaction(['jobs','cache'],'readwrite');
       const jobStore=tr.objectStore('jobs'),cacheStore=tr.objectStore('cache');
       for(const j of jobs){
-        if((j.kind==='expense'&&j.payload.id===id)||(j.kind==='attach'&&j.expenseId===id))jobStore.delete(j.id);
+        if((j.kind==='expense'&&j.payload.id===id)||(j.kind==='attach'&&j.expenseId===id)||(j.kind==='document'&&j.payload?.gasto_id===id))jobStore.delete(j.id);
       }
       jobStore.put({id:'delete:'+id,kind:'delete_expense',uid,expenseId:id,created:new Date().toISOString()});
       const get=cacheStore.get('expenses:'+uid);
@@ -145,7 +186,7 @@ window.GFOffline = (() => {
     // Solo dejamos de asociarlos al gasto eliminado.
     for(const j of jobs){
       if(j.kind==='document'&&j.payload?.gasto_id===id){
-        j.payload.gasto_id=null;await putJob(j);
+        // Eliminado en la misma transacción; no volver a encolar.
       }
     }
     await displayQueue();
@@ -296,7 +337,7 @@ window.GFOffline = (() => {
     paintNetwork();displayQueue();
   }
   return Object.assign(state,{
-    attach,paintNetwork,displayQueue,enqueueExpense,enqueueAttach,prepareDocument,
+    attach,paintNetwork,displayQueue,enqueueExpense,enqueueExpenseBundle,enqueueAttach,getPendingForExpenseIds,prepareDocument,
     enqueueDocument,enqueueDocFile,enqueueDeleteExpense,getPendingDeletedIds,saveCachedExpenses,getCachedExpenses,
     saveCachedDocs,getCachedDocs,sync
   });
