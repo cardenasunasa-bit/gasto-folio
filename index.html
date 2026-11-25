@@ -6,8 +6,10 @@
 <meta name="theme-color" content="#073d32">
 <title>GastoFolio | Mis gastos, en orden</title>
 <link rel="icon" type="image/png" href="./icon.png">
+<link rel="manifest" href="./manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./config.js"></script>
+<script src="./offline.js"></script>
 <style>
 
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#173c32;background:#f7f6ed}*{box-sizing:border-box}
@@ -28,6 +30,16 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
 #photoPreview{max-width:100%;max-height:260px;border-radius:8px;display:block;margin:10px auto}.preview{background:#f1f8ef;border-radius:12px;padding:12px;margin-top:12px}.preview img{display:block;max-width:100%;max-height:65vh;margin:auto;border-radius:8px}.preview .row{justify-content:flex-end}
 .logo{display:block;width:min(390px,100%);height:auto;border-radius:15px}.logo-small{display:block;width:min(290px,100%);height:auto;border-radius:10px}.hero{background:#f9faf2;display:flex;align-items:center;justify-content:space-between;gap:22px}.intro{border-left:4px solid #f17860;padding-left:12px}.login-layout{max-width:470px;margin:7vh auto 0}.login-layout .card{padding:24px}.login-layout h2{font-size:22px}.login-fields{margin-top:18px}.login-fields button{width:100%;margin-top:16px}.login-logo{display:block;max-width:100%;width:430px;margin:auto}.tiny{font-size:12px;color:#587568}.tag{display:inline-flex;border-radius:99px;background:#ebeee7;color:#2c644a;padding:7px 10px;font-size:12px;font-weight:700}
 @media(max-width:500px){body{padding:10px}.card{padding:15px}.filters{grid-template-columns:1fr}.row button,.row .btn{flex:1}.expenses{grid-template-columns:1fr}h1{font-size:23px}.login-layout{margin:3vh auto 0}.hero{align-items:flex-start}.logo-small{max-width:250px}}
+
+.offline-banner{padding:12px 16px;border-radius:13px;background:#ffefd2;color:#6b4e16;margin:12px 0;font-weight:700}
+.offline-banner.online{background:#e2f4e7;color:#19643e}
+.offline-banner.error{background:#fff0e9;color:#9d3f2e}
+.queue-card{border:1px solid #edd79d;background:#fffaf0;padding:12px;border-radius:12px;margin:9px 0}
+.queue-card strong{font-size:14px}.queue-card .muted{margin:5px 0}
+.docgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.doc-card{border:1px solid #dfe7dc;border-radius:15px;padding:14px;background:#fff}
+.doc-card button{font-size:12px;padding:9px 10px;margin-top:6px}
+.form-tip{font-size:12px;color:#597065;margin:8px 0}
 </style>
 </head>
 <body><main class="wrap">
@@ -48,12 +60,60 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
 </div>
 <header class="card hero hidden" id="appHeader"><div><img class="logo-small" src="./logo.png" alt="GastoFolio"><div class="muted intro">Mis gastos, en orden · Archivo privado de comprobantes</div></div><button type="button" id="exitButton" class="secondary">Cerrar sesión</button></header>
 <section id="gastosApp" class="hidden">
-  <div class="card"><div class="grid"><div class="sum"><small>Total activo mostrado</small><strong id="sumTotal">$0</strong></div><div class="sum"><small>Comprobantes con foto</small><strong id="sumPhotos">0</strong></div><div class="sum"><small>Registros mostrados</small><strong id="sumCount">0</strong></div></div><p class="muted">Cada gasto tiene dos meses de conservación desde su registro. La eliminación automática todavía no está activada. Fecha y hora de Colombia. Descarga tus PDFs antes del vencimiento.</p></div>
-  <section class="card"><h2>➕ Registrar nuevo gasto</h2><form id="expenseForm"><div class="grid"><div><label for="categoria">Categoría</label><select id="categoria" required><option value="comida">🍽️ Comida</option><option selected value="combustible">⛽ Combustible</option><option value="peajes">🎟️ Peajes</option><option value="calibracion_llantas">🛞 Calibración de llantas</option><option value="agua">💧 Agua</option><option value="otros">📁 Otros</option></select></div><div><label for="valor">Valor del gasto (COP)</label><input id="valor" inputmode="numeric" type="number" min="1" max="999999999999" step="1" placeholder="Ej. 50000" required></div></div><label for="nota">Nota o descripción</label><textarea id="nota" maxlength="500" placeholder="Ej. Tanqueo de motocicleta"></textarea><div class="photo-box"><strong>📷 Comprobante (opcional)</strong><p class="muted">Puedes tomar la foto o seleccionar una de tu galería. Se comprimirá a WebP, manteniendo buena resolución para leer fechas y valores.</p><div class="photo-actions"><label for="captureCamera"><span>📸 Tomar foto</span><input type="file" id="captureCamera" accept="image/*" capture="environment"></label><label for="chooseGallery"><span>🖼️ Galería</span><input type="file" id="chooseGallery" accept="image/*"></label></div><div id="fileLabel" class="muted" style="margin-top:9px">Ninguna fotografía seleccionada</div><img id="photoPreview" alt="Vista previa del recibo" class="hidden"><button id="clearPhoto" type="button" class="secondary hidden">Quitar foto</button></div><div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">Guardar gasto</button></div></form><div id="saveStatus" class="status" aria-live="polite">La fecha, la hora y el vencimiento se asignan desde Supabase.</div></section>
+  <div id="networkStatus" class="offline-banner">Comprobando conexión...</div>
+  <section class="card">
+    <h2>📲 Registros guardados en este teléfono</h2>
+    <p class="muted">Los pendientes no se han enviado a Supabase. Conserva las fotos originales y no borres los datos del navegador hasta que aparezcan sincronizados.</p>
+    <div id="pendingStatus" class="status">Comprobando cola local...</div>
+    <div id="pendingList"></div>
+    <div class="row"><button type="button" id="syncNow" class="secondary">🔄 Sincronizar ahora</button></div>
+  </section>
+  <div class="card"><div class="grid"><div class="sum"><small>Total activo mostrado</small><strong id="sumTotal">$0</strong></div><div class="sum"><small>Comprobantes con foto</small><strong id="sumPhotos">0</strong></div><div class="sum"><small>Registros mostrados</small><strong id="sumCount">0</strong></div></div><p class="muted">Los gastos tienen un vencimiento de dos meses desde su registro. La eliminación automática aún NO está activada. Los RUT y las cuentas de cobro se guardan aparte, sin borrado automático. Sin conexión puedes registrar gastos y documentos; se sincronizan cuando vuelvas a conectarte y abras la aplicación.</p></div>
+  <section class="card"><h2>➕ Registrar nuevo gasto</h2><form id="expenseForm"><div class="grid"><div><label for="categoria">Categoría</label><select id="categoria" required><option value="comida">🍽️ Comida</option><option selected value="combustible">⛽ Combustible</option><option value="peajes">🎟️ Peajes</option><option value="calibracion_llantas">🛞 Calibración de llantas</option><option value="agua">💧 Agua</option><option value="otros">📁 Otros</option></select></div><div><label for="valor">Valor del gasto (COP)</label><input id="valor" inputmode="numeric" type="number" min="1" max="999999999999" step="1" placeholder="Ej. 50000" required></div></div><label for="nota">Nota o descripción</label><textarea id="nota" maxlength="500" placeholder="Ej. Tanqueo de motocicleta"></textarea><div class="photo-box"><strong>📷 Comprobante (opcional)</strong><p class="muted">Puedes tomar la foto o seleccionar una de tu galería. Se comprimirá a WebP, manteniendo buena resolución para leer fechas y valores.</p><div class="photo-actions"><label for="captureCamera"><span>📸 Tomar foto</span><input type="file" id="captureCamera" accept="image/*" capture="environment"></label><label for="chooseGallery"><span>🖼️ Galería</span><input type="file" id="chooseGallery" accept="image/*"></label></div><div id="fileLabel" class="muted" style="margin-top:9px">Ninguna fotografía seleccionada</div><img id="photoPreview" alt="Vista previa del recibo" class="hidden"><button id="clearPhoto" type="button" class="secondary hidden">Quitar foto</button></div><div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">Guardar gasto</button></div></form><div id="saveStatus" class="status" aria-live="polite">La fecha del gasto se conserva aunque registres sin internet. La fecha de almacenamiento y vencimiento se asignan al sincronizar con Supabase.</div></section>
   <section class="card"><h2>📂 Historial por categorías</h2><div class="filters"><div><label for="filterCategoria">Categoría</label><select id="filterCategoria"><option value="">Todas las categorías</option><option value="comida">Comida</option><option value="combustible">Combustible</option><option value="peajes">Peajes</option><option value="calibracion_llantas">Calibración de llantas</option><option value="agua">Agua</option><option value="otros">Otros</option></select></div><div><label for="filterMes">Mes (opcional)</label><input type="month" id="filterMes"></div></div><div class="row" style="margin-top:13px"><button type="button" id="refreshExpenses" class="secondary">Actualizar</button><button type="button" id="exportPdf">📄 Descargar PDF (una página por gasto)</button><button type="button" id="exportCsv" class="secondary">Descargar informe CSV</button><button type="button" id="exportZip" class="secondary">Descargar gastos + fotos (ZIP)</button></div><p class="muted">El PDF incluirá los gastos visibles según los filtros. Cada gasto tendrá una página A4 con su fotografía, categoría, valor, fecha y hora, y observaciones. También puedes descargar el PDF de un solo gasto. Si necesitas conservar el original, descarga antes de la fecha de vencimiento.</p><div id="listStatus" class="status" aria-live="polite">Consultando registros…</div><div class="expenses" id="expensesList"></div></section>
+<section class="card" id="documentsSection">
+  <h2>📁 Documentos de restaurantes y proveedores</h2>
+  <p class="muted">Guarda RUT, cuentas de cobro u otros documentos en PDF o fotografía. Si todavía no te entregan el RUT, regístralo como <strong>pendiente</strong>. Estos documentos se conservan separados de los gastos de dos meses.</p>
+  <form id="docForm">
+    <div class="grid">
+      <div>
+        <label for="docTipo">Tipo de documento</label>
+        <select id="docTipo" required>
+          <option value="rut">RUT</option>
+          <option value="cuenta_cobro">Cuenta de cobro</option>
+          <option value="otro">Otro documento</option>
+        </select>
+      </div>
+      <div>
+        <label for="docEstablecimiento">Restaurante o empresa</label>
+        <input id="docEstablecimiento" maxlength="160" placeholder="Ej. Restaurante La Ruta" required>
+      </div>
+      <div>
+        <label for="docNit">NIT (opcional)</label>
+        <input id="docNit" maxlength="32" placeholder="Ej. 900123456-7">
+      </div>
+      <div>
+        <label for="docGasto">Asociar a gasto (opcional)</label>
+        <select id="docGasto"><option value="">Sin asociar</option></select>
+      </div>
+    </div>
+    <label for="docNota">Observaciones</label>
+    <textarea id="docNota" maxlength="500" placeholder="Ej. Pendiente RUT del restaurante; pedirlo en la próxima visita"></textarea>
+    <label for="docFile">Adjuntar documento PDF o fotografía (opcional)</label>
+    <input type="file" id="docFile" accept="application/pdf,.pdf,image/*">
+    <p class="form-tip">PDF: hasta 10 MB. Fotografía: se convierte a WebP de máximo 3 MB. Si no adjuntas archivo, queda como pendiente.</p>
+    <button type="submit" id="saveDoc">💾 Guardar documento / pendiente</button>
+  </form>
+  <div id="docSaveStatus" class="status">Los archivos se almacenan de forma privada en Supabase. Sin internet quedan pendientes en el teléfono.</div>
+  <div class="row"><button type="button" id="refreshDocs" class="secondary">Actualizar documentos</button></div>
+  <h2 style="margin-top:14px">📋 Documentos registrados</h2>
+  <div id="docListStatus" class="status">Consultando documentos...</div>
+  <div id="docsList" class="docgrid"></div>
+</section>
 </section>
 <section id="previewModal" class="card hidden preview" aria-label="Vista previa del comprobante"><div class="row"><button id="closePreview" type="button" class="secondary">Cerrar foto</button><a id="downloadPreview" class="btn" download="comprobante.webp">Descargar foto</a></div><img id="previewImage" alt="Foto del comprobante"></section>
 <input id="attachPhoto" type="file" accept="image/*" class="hidden" aria-label="Adjuntar foto a un gasto existente">
+<input id="attachDocFile" type="file" accept="application/pdf,.pdf,image/*" class="hidden" aria-label="Adjuntar documento existente">
 </main>
 <script>
 'use strict';
@@ -79,26 +139,83 @@ function imageLoad(file){return new Promise((resolve,reject)=>{const img=new Ima
 function encodeWebp(canvas,quality){return new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality))}
 async function compressWebp(file){const img=await imageLoad(file);let longest=2200;for(let attempt=0;attempt<6;attempt++){const scale=Math.min(1,longest/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingQuality='high';ctx.drawImage(img,0,0,canvas.width,canvas.height);const blob=await encodeWebp(canvas,attempt<2?.9:.82);if(blob?.type==='image/webp'&&blob.size<=3*1024*1024)return blob;longest=Math.round(longest*.82)}throw new Error('No fue posible preparar una imagen WebP de máximo 3 MB. Intenta otra foto.')}
 async function confirmOwner(){
- if(!navigator.onLine)throw Error('Necesitas conexión para entrar y registrar gastos.');
- const {data:u,error:ue}=await db.auth.getUser();
- if(ue||!u?.user)throw Error('Inicia sesión con tu cuenta personal de GastoFolio.');
- const {data:owner,error:oe}=await db.rpc('gastofolio_is_owner');
- if(oe||owner!==true)throw Error('Esta cuenta no tiene permiso de propietario.');
- me=u.user;
- $('loginArea').classList.add('hidden');
- $('appHeader').classList.remove('hidden');
- $('gastosApp').classList.remove('hidden');
- await refresh();
+  let user;
+  if(navigator.onLine){
+    const {data:u,error:ue}=await db.auth.getUser();
+    if(ue||!u?.user)throw Error('Inicia sesión con tu cuenta personal de GastoFolio.');
+    const {data:owner,error:oe}=await db.rpc('gastofolio_is_owner');
+    if(oe||owner!==true)throw Error('Esta cuenta no tiene permiso de propietario.');
+    user=u.user;
+    localStorage.setItem('gf_last_verified_owner',user.id);
+  }else{
+    // Solo para una sesión previamente confirmada online en este mismo navegador.
+    const {data:{session}}=await db.auth.getSession();
+    if(!session?.user || localStorage.getItem('gf_last_verified_owner')!==session.user.id)
+      throw Error('Para usar GastoFolio sin internet, primero inicia sesión una vez con conexión en este teléfono.');
+    user=session.user;
+  }
+  me=user;
+  $('loginArea').classList.add('hidden');
+  $('appHeader').classList.remove('hidden');
+  $('gastosApp').classList.remove('hidden');
+  GFOffline.attach({db,getUser:()=>me,compress:compressWebp,update:()=>refresh(),setState});
+  await refresh();
+  await refreshDocs();
+  await GFOffline.displayQueue();
+  if(navigator.onLine) GFOffline.sync();
 }
 
 function monthBogota(timestamp){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Bogota',year:'numeric',month:'2-digit'}).formatToParts(new Date(timestamp));return parts.find(x=>x.type==='year').value+'-'+parts.find(x=>x.type==='month').value}
 function filtered(){const c=$('filterCategoria').value,m=$('filterMes').value;return entries.filter(x=>(!c||x.categoria===c)&&(!m||monthBogota(x.fecha_gasto)===m))}
-function render(){const visible=filtered();const active=visible.filter(x=>!x.anulado);$('sumTotal').textContent=cop(active.reduce((v,x)=>v+Number(x.valor_cop),0));$('sumPhotos').textContent=visible.filter(x=>!!x.comprobante_ruta).length;$('sumCount').textContent=visible.length;const target=$('expensesList');target.innerHTML='';for(const x of visible){const item=document.createElement('article');item.className='expense'+(x.anulado?' annulled':'');item.innerHTML='<div class="expense-top"><span class="pill">'+html(categories[x.categoria]||x.categoria)+'</span><span class="muted">'+(x.anulado?'Anulado':'Activo')+'</span></div><div class="amount">'+html(cop(x.valor_cop))+'</div><div class="note">'+html(x.nota||'Sin nota')+'</div><div class="meta">📅 '+html(dt(x.registrado_en))+'</div><div class="meta">Vence: '+html(dt(x.expira_en))+'</div><div class="row"><button type="button" class="secondary" data-action="'+(x.comprobante_ruta?'view':'attach')+'" data-id="'+html(x.id)+'">'+(x.comprobante_ruta?'📷 Ver recibo':'📷 Adjuntar foto')+'</button><button type="button" class="secondary" data-action="pdf" data-id="'+html(x.id)+'">📄 PDF</button><button type="button" class="'+(x.anulado?'secondary':'danger')+'" data-action="toggle" data-id="'+html(x.id)+'">'+(x.anulado?'Reactivar':'Anular')+'</button></div>';target.appendChild(item)}setState('listStatus',visible.length+' gastos encontrados. '+(entries.length>=1000?'Se muestran como máximo 1000 registros; aplica filtros o contacta soporte si tienes más.':'Puedes filtrar por categoría y mes.'),'')}
-async function refresh(){const btn=$('refreshExpenses');btn.disabled=true;setState('listStatus','Consultando gastos en Supabase…');try{const {data,error}=await db.from('gastofolio_gastos').select('id,categoria,valor_cop,nota,registrado_en,fecha_gasto,expira_en,comprobante_ruta,anulado').order('registrado_en',{ascending:false}).limit(1000);if(error)throw error;entries=data||[];render()}catch(e){setState('listStatus','No se pudieron consultar los gastos: '+e.message,'error')}finally{btn.disabled=false}}
+function render(){const visible=filtered();const active=visible.filter(x=>!x.anulado);$('sumTotal').textContent=cop(active.reduce((v,x)=>v+Number(x.valor_cop),0));$('sumPhotos').textContent=visible.filter(x=>!!x.comprobante_ruta).length;$('sumCount').textContent=visible.length;const target=$('expensesList');target.innerHTML='';for(const x of visible){const item=document.createElement('article');item.className='expense'+(x.anulado?' annulled':'');item.innerHTML='<div class="expense-top"><span class="pill">'+html(categories[x.categoria]||x.categoria)+'</span><span class="muted">'+(x.anulado?'Anulado':'Activo')+'</span></div><div class="amount">'+html(cop(x.valor_cop))+'</div><div class="note">'+html(x.nota||'Sin nota')+'</div><div class="meta">📅 '+html(dt(x.fecha_gasto))+'</div><div class="meta">Vence: '+html(dt(x.expira_en))+'</div><div class="row"><button type="button" class="secondary" data-action="'+(x.comprobante_ruta?'view':'attach')+'" data-id="'+html(x.id)+'">'+(x.comprobante_ruta?'📷 Ver recibo':'📷 Adjuntar foto')+'</button><button type="button" class="secondary" data-action="pdf" data-id="'+html(x.id)+'">📄 PDF</button><button type="button" class="'+(x.anulado?'secondary':'danger')+'" data-action="toggle" data-id="'+html(x.id)+'">'+(x.anulado?'Reactivar':'Anular')+'</button></div>';target.appendChild(item)}setState('listStatus',visible.length+' gastos encontrados. '+(entries.length>=1000?'Se muestran como máximo 1000 registros; aplica filtros o contacta soporte si tienes más.':'Puedes filtrar por categoría y mes.'),'')}
+async function refresh(){
+ const btn=$('refreshExpenses');btn.disabled=true;
+ try{
+   if(!navigator.onLine){
+     entries=await GFOffline.getCachedExpenses(me.id);
+     render();setState('listStatus','Sin conexión: mostrando último historial consultado en este teléfono. Los registros nuevos aparecen en Pendientes.');
+     return;
+   }
+   setState('listStatus','Consultando gastos en Supabase…');
+   const {data,error}=await db.from('gastofolio_gastos').select('id,categoria,valor_cop,nota,registrado_en,fecha_gasto,expira_en,comprobante_ruta,anulado').order('registrado_en',{ascending:false}).limit(1000);
+   if(error)throw error;
+   entries=data||[];
+   await GFOffline.saveCachedExpenses(me.id,entries);
+   render();refreshDocExpenseOptions();
+ }catch(e){
+   entries=await GFOffline.getCachedExpenses(me.id).catch(()=>[]);render();
+   setState('listStatus','No se pudo consultar Supabase: '+e.message+'. Se muestra información local si estaba disponible.','error');
+ }finally{btn.disabled=false}
+}
+
 async function attachReceipt(entry,file){if(!file)return;const path=me.id+'/'+entry.id+'/recibo.webp';let exists=false;const probe=await db.storage.from('gastofolio-recibos').download(path);if(!probe.error)exists=true;if(!exists){const blob=await compressWebp(file);const uploaded=await db.storage.from('gastofolio-recibos').upload(path,blob,{upsert:false,contentType:'image/webp'});if(uploaded.error)throw new Error('No se pudo subir el recibo: '+uploaded.error.message)}const {error:upError}=await db.from('gastofolio_gastos').update({comprobante_ruta:path}).eq('id',entry.id);if(upError)throw new Error('El archivo puede haberse guardado pero no quedó asociado al gasto: '+upError.message);return path}
-$('expenseForm').addEventListener('submit',async event=>{event.preventDefault();if(busy)return;const value=Number($('valor').value);if(!Number.isSafeInteger(value)||value<=0){setState('saveStatus','Escribe un valor entero positivo en pesos colombianos.','error');return}if(!me){setState('saveStatus','No hay sesión verificada.','error');return}busy=true;$('saveExpense').disabled=true;let inserted=null;try{setState('saveStatus','Guardando gasto en Supabase…');const id=crypto.randomUUID();const {data,error}=await db.from('gastofolio_gastos').insert({id,categoria:$('categoria').value,valor_cop:value,nota:$('nota').value.trim()||null}).select('id').single();if(error)throw error;inserted=data;const hadPhoto=!!photoFile;if(hadPhoto){setState('saveStatus','Gasto registrado. Subiendo fotografía…');await attachReceipt(data,photoFile)}$('valor').value='';$('nota').value='';clearSelectedPhoto();setState('saveStatus','✅ Gasto guardado correctamente'+(hadPhoto?' con fotografía.':'.'),'ok');await refresh()}catch(e){setState('saveStatus',(inserted?'El gasto se registró, pero la foto necesita revisión. ':'No se pudo guardar el gasto. ')+e.message+(inserted?' Puedes intentar adjuntar la foto desde el historial.':''),'error');if(inserted)await refresh()}finally{busy=false;$('saveExpense').disabled=false}});
-$('expensesList').addEventListener('click',async event=>{const button=event.target.closest('button[data-action]');if(!button)return;const expense=entries.find(x=>x.id===button.dataset.id);if(!expense)return;button.disabled=true;try{if(button.dataset.action==='attach'){attachExpenseId=expense.id;$('attachPhoto').click()}else if(button.dataset.action==='view'){setState('listStatus','Descargando recibo privado…');const {data,error}=await db.storage.from('gastofolio-recibos').download(expense.comprobante_ruta);if(error)throw error;if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=URL.createObjectURL(data);$('previewImage').src=previewObjectUrl;$('downloadPreview').href=previewObjectUrl;$('downloadPreview').download='recibo-'+expense.id+'.webp';$('previewModal').classList.remove('hidden');$('previewModal').scrollIntoView({behavior:'smooth'});setState('listStatus','Comprobante consultado correctamente.','ok')}else if(button.dataset.action==='pdf'){await exportPdf([expense],button)}else if(button.dataset.action==='toggle'){if(!confirm((expense.anulado?'¿Reactivar':'¿Anular')+' este gasto? No se elimina el registro ni la fotografía.'))return;const {error}=await db.from('gastofolio_gastos').update({anulado:!expense.anulado}).eq('id',expense.id);if(error)throw error;await refresh()}}catch(e){setState('listStatus','No se pudo realizar la operación: '+e.message,'error')}finally{button.disabled=false}});
-$('attachPhoto').addEventListener('change',async e=>{const file=e.target.files[0];const expense=entries.find(x=>x.id===attachExpenseId);e.target.value='';if(!file||!expense)return;setState('listStatus','Preparando y subiendo comprobante…');try{await attachReceipt(expense,file);setState('listStatus','Fotografía asociada al gasto.','ok');await refresh()}catch(err){setState('listStatus','No se pudo adjuntar el comprobante: '+err.message,'error')}});
+$('expenseForm').addEventListener('submit',async event=>{
+ event.preventDefault();if(busy)return;
+ const value=Number($('valor').value);
+ if(!Number.isSafeInteger(value)||value<=0){setState('saveStatus','Escribe un valor entero positivo en pesos colombianos.','error');return}
+ if(!me){setState('saveStatus','No hay sesión previamente verificada.','error');return}
+ busy=true;$('saveExpense').disabled=true;
+ try{
+   setState('saveStatus','Guardando de forma segura en este teléfono…');
+   const blob=photoFile?await compressWebp(photoFile):null;
+   await GFOffline.enqueueExpense({id:crypto.randomUUID(),categoria:$('categoria').value,valor_cop:value,nota:$('nota').value.trim()||null,fecha_gasto:new Date().toISOString()},blob);
+   $('valor').value='';$('nota').value='';clearSelectedPhoto();
+   setState('saveStatus',navigator.onLine?'✅ Guardado localmente; iniciando sincronización…':'✅ Guardado en el teléfono. Se subirá junto a la foto cuando haya internet.','ok');
+   GFOffline.sync();
+ }catch(e){setState('saveStatus','NO se guardó el gasto: '+e.message+'. Conserva la foto original y vuelve a intentar.','error')}
+ finally{busy=false;$('saveExpense').disabled=false}
+});
+$('expensesList').addEventListener('click',async event=>{const button=event.target.closest('button[data-action]');if(!button)return;const expense=entries.find(x=>x.id===button.dataset.id);if(!expense)return;button.disabled=true;try{if(button.dataset.action==='attach'){attachExpenseId=expense.id;$('attachPhoto').click()}else if(button.dataset.action==='view'){if(!navigator.onLine)throw Error('La descarga de recibos ya sincronizados requiere internet.');setState('listStatus','Descargando recibo privado…');const {data,error}=await db.storage.from('gastofolio-recibos').download(expense.comprobante_ruta);if(error)throw error;if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=URL.createObjectURL(data);$('previewImage').src=previewObjectUrl;$('downloadPreview').href=previewObjectUrl;$('downloadPreview').download='recibo-'+expense.id+'.webp';$('previewModal').classList.remove('hidden');$('previewModal').scrollIntoView({behavior:'smooth'});setState('listStatus','Comprobante consultado correctamente.','ok')}else if(button.dataset.action==='pdf'){await exportPdf([expense],button)}else if(button.dataset.action==='toggle'){if(!navigator.onLine)throw Error('Para anular o reactivar un gasto existente, conecta el teléfono a internet.');if(!confirm((expense.anulado?'¿Reactivar':'¿Anular')+' este gasto? No se elimina el registro ni la fotografía.'))return;const {error}=await db.from('gastofolio_gastos').update({anulado:!expense.anulado}).eq('id',expense.id);if(error)throw error;await refresh()}}catch(e){setState('listStatus','No se pudo realizar la operación: '+e.message,'error')}finally{button.disabled=false}});
+$('attachPhoto').addEventListener('change',async e=>{
+ const file=e.target.files[0];const expense=entries.find(x=>x.id===attachExpenseId);e.target.value='';
+ if(!file||!expense)return;
+ try{
+   const blob=await compressWebp(file);
+   await GFOffline.enqueueAttach(expense.id,blob);
+   setState('listStatus',navigator.onLine?'Foto guardada en cola; sincronizando…':'Foto guardada en el teléfono para subir cuando vuelva internet.','ok');
+   GFOffline.sync();
+ }catch(err){setState('listStatus','No se guardó la fotografía: '+err.message,'error')}
+});
 $('closePreview').onclick=()=>{$('previewModal').classList.add('hidden');$('previewImage').removeAttribute('src');if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null};
 $('filterCategoria').onchange=render;$('filterMes').onchange=render;$('refreshExpenses').onclick=refresh;
 // PDF con comprobantes: exactamente una página A4 por gasto, sin recortar la fotografía.
@@ -225,6 +342,95 @@ $('exportCsv').onclick=()=>{const arr=filtered();if(!arr.length){setState('listS
 function loadJSZip(){return new Promise((resolve,reject)=>{if(window.JSZip)return resolve(window.JSZip);const script=document.createElement('script');script.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';script.onload=()=>resolve(window.JSZip);script.onerror=()=>reject(Error('No fue posible cargar la herramienta ZIP. Revisa tu conexión.'));document.head.appendChild(script)})}
 $('exportZip').onclick=async()=>{const arr=filtered();if(!arr.length){setState('listStatus','No hay gastos para respaldar.','error');return}const photos=arr.filter(x=>x.comprobante_ruta);if(photos.length>150){setState('listStatus','Hay más de 150 fotografías. Filtra por mes o categoría para hacer respaldos más pequeños.','error');return}const button=$('exportZip');button.disabled=true;try{const Zip=await loadJSZip(),zip=new Zip();zip.file('informe_gastos.csv',makeCSV(arr));for(let i=0;i<photos.length;i++){const g=photos[i];setState('listStatus','Descargando fotografías privadas: '+(i+1)+' de '+photos.length+'…');const {data,error}=await db.storage.from('gastofolio-recibos').download(g.comprobante_ruta);if(error)throw Error('Fallo la descarga del comprobante '+g.id+': '+error.message);zip.file('comprobantes/'+g.categoria+'/'+g.id+'.webp',data)}setState('listStatus','Preparando archivo ZIP…');const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:3}});saveBlob(blob,'GastoFolio_respaldo_gastos_'+new Date().toISOString().slice(0,10)+'.zip');setState('listStatus','✅ Respaldo ZIP descargado. Comprueba que se abre y conserva otra copia fuera de GastoFolio.','ok')}catch(e){setState('listStatus','No se pudo completar el ZIP: '+e.message+'. No se eliminó ningún gasto.','error')}finally{button.disabled=false}};
 
+
+// Documentos privados (RUT, cuentas de cobro y otros).
+let docs=[];
+const docNames={rut:'RUT',cuenta_cobro:'Cuenta de cobro',otro:'Otro documento'};
+function refreshDocExpenseOptions(){
+ const select=$('docGasto');const previous=select.value;
+ select.innerHTML='<option value="">Sin asociar</option>';
+ for(const g of entries.slice(0,150)){
+   const opt=document.createElement('option');opt.value=g.id;
+   opt.textContent=(categories[g.categoria]||g.categoria)+' · '+cop(g.valor_cop)+' · '+dt(g.fecha_gasto);
+   select.appendChild(opt);
+ }
+ if([...select.options].some(x=>x.value===previous))select.value=previous;
+}
+function renderDocs(){
+ const target=$('docsList');target.innerHTML='';
+ for(const d of docs){
+   const article=document.createElement('article');article.className='doc-card';
+   article.innerHTML='<div class="expense-top"><span class="pill">'+html(docNames[d.tipo]||d.tipo)+'</span><span class="muted">'+(d.archivo_ruta?'✅ Recibido':'⏳ Pendiente')+'</span></div>'+
+    '<h3 style="margin:12px 0 5px">'+html(d.establecimiento)+'</h3><div class="muted">'+html(d.nit?'NIT: '+d.nit:'Sin NIT')+'</div>'+
+    '<p class="note">'+html(d.nota||'Sin observaciones')+'</p><div class="muted">📅 '+html(dt(d.registrado_en))+'</div>'+
+    '<button class="secondary" type="button" data-doc-id="'+html(d.id)+'">'+(d.archivo_ruta?'📄 Descargar documento':'📎 Adjuntar PDF o foto')+'</button>';
+   target.appendChild(article);
+ }
+ setState('docListStatus',docs.length+' documentos encontrados. Los pendientes sin archivo aparecen arriba.');
+}
+async function refreshDocs(){
+ if(!me)return;
+ try{
+   if(!navigator.onLine){docs=await GFOffline.getCachedDocs(me.id);renderDocs();setState('docListStatus','Sin conexión: mostrando último historial de documentos disponible en el teléfono.');return}
+   const {data,error}=await db.from('gastofolio_documentos')
+     .select('id,tipo,establecimiento,nit,nota,estado,archivo_ruta,archivo_tipo,gasto_id,registrado_en')
+     .order('registrado_en',{ascending:false}).limit(1000);
+   if(error)throw error;
+   docs=(data||[]).sort((a,b)=>Number(!!a.archivo_ruta)-Number(!!b.archivo_ruta));
+   await GFOffline.saveCachedDocs(me.id,docs);renderDocs();
+ }catch(e){docs=await GFOffline.getCachedDocs(me.id).catch(()=>[]);renderDocs();setState('docListStatus','No se pudieron consultar documentos: '+e.message+'; consulta la sección Pendientes.','error')}
+}
+$('docForm').addEventListener('submit',async ev=>{
+ ev.preventDefault();if(!me)return;
+ const btn=$('saveDoc');btn.disabled=true;
+ try{
+   const file=$('docFile').files[0]||null;
+   const prepared=file?await GFOffline.prepareDocument(file,compressWebp):null;
+   const payload={id:crypto.randomUUID(),tipo:$('docTipo').value,
+     establecimiento:$('docEstablecimiento').value.trim(),nit:$('docNit').value.trim()||null,
+     nota:$('docNota').value.trim()||null,gasto_id:$('docGasto').value||null};
+   if(!payload.establecimiento)throw Error('Escribe el restaurante o empresa.');
+   await GFOffline.enqueueDocument(payload,prepared);
+   $('docForm').reset();
+   setState('docSaveStatus',navigator.onLine?'✅ Documento guardado localmente. Sincronizando…':'✅ Documento o pendiente guardado en el teléfono; sincronizará cuando haya conexión.','ok');
+   GFOffline.sync();
+ }catch(e){setState('docSaveStatus','NO se pudo guardar: '+e.message,'error')}
+ finally{btn.disabled=false}
+});
+$('docsList').addEventListener('click',async ev=>{
+ const btn=ev.target.closest('button[data-doc-id]');if(!btn)return;
+ const doc=docs.find(x=>x.id===btn.dataset.docId);if(!doc)return;
+ btn.disabled=true;
+ try{
+   if(doc.archivo_ruta){
+     if(!navigator.onLine)throw Error('Para descargar un archivo ya sincronizado necesitas internet.');
+     const {data,error}=await db.storage.from('gastofolio-documentos').download(doc.archivo_ruta);
+     if(error)throw error;
+     saveBlob(data,'GastoFolio_'+doc.tipo+'_'+doc.id.slice(0,8)+(doc.archivo_tipo==='application/pdf'?'.pdf':'.webp'));
+     setState('docListStatus','✅ Documento privado descargado.','ok');
+   }else{GFOffline.documentToAttach=doc.id;$('attachDocFile').click()}
+ }catch(e){setState('docListStatus','No se pudo descargar el documento: '+e.message,'error')}
+ finally{btn.disabled=false}
+});
+$('attachDocFile').addEventListener('change',async ev=>{
+ const file=ev.target.files[0];ev.target.value='';const docId=GFOffline.documentToAttach;
+ if(!file||!docId)return;
+ try{
+   const prepared=await GFOffline.prepareDocument(file,compressWebp);
+   await GFOffline.enqueueDocFile(docId,prepared);
+   setState('docListStatus','✅ Documento guardado en este teléfono; se sincronizará automáticamente.','ok');
+   GFOffline.sync();
+ }catch(e){setState('docListStatus','No se guardó el documento: '+e.message,'error')}
+});
+$('refreshDocs').onclick=refreshDocs;
+$('syncNow').onclick=()=>GFOffline.sync(true);
+// La aplicación se sincroniza al volver internet o recuperar el foco.
+window.addEventListener('online',()=>GFOffline.sync());
+window.addEventListener('offline',()=>GFOffline.paintNetwork());
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me){GFOffline.paintNetwork();GFOffline.sync()}});
+setInterval(()=>{if(me&&navigator.onLine&&!document.hidden)GFOffline.sync()},60000);
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('SW no instalado',e)))}
+
 $('loginForm').addEventListener('submit',async(e)=>{
  e.preventDefault();
  if(!CONFIG_OK){setState('accessStatus','Falta configurar el nuevo proyecto de Supabase en config.js.','error');return;}
@@ -239,8 +445,10 @@ $('loginForm').addEventListener('submit',async(e)=>{
  finally{button.disabled=false}
 });
 $('exitButton').addEventListener('click',async()=>{
- await db.auth.signOut();
- me=null; entries=[];clearSelectedPhoto();
+ localStorage.removeItem('gf_last_verified_owner');
+ await db.auth.signOut({scope:'local'});
+ me=null; entries=[];docs=[];clearSelectedPhoto();
+ $('pendingList').replaceChildren();$('docsList').replaceChildren();
  $('appHeader').classList.add('hidden');
  $('gastosApp').classList.add('hidden');
  $('loginArea').classList.remove('hidden');
@@ -250,7 +458,7 @@ $('exitButton').addEventListener('click',async()=>{
  if(!CONFIG_OK){setState('accessStatus','Configuración pendiente: debes crear el nuevo proyecto de Supabase y completar config.js.','error');return}
  try{
    const {data:{session}}=await db.auth.getSession();
-   if(session){try{await confirmOwner()}catch(e){await db.auth.signOut();setState('accessStatus',e.message,'error')}}
+   if(session){try{await confirmOwner()}catch(e){setState('accessStatus',e.message,'error')}}
    else setState('accessStatus','Introduce tu correo y contraseña personal.');
  }catch(e){setState('accessStatus','No se pudo verificar la sesión: '+e.message,'error')}
 })();

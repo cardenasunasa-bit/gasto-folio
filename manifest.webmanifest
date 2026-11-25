@@ -1,0 +1,11 @@
+{
+  "name": "GastoFolio | Mis gastos en orden",
+  "short_name": "GastoFolio",
+  "description": "Registro privado de gastos y documentos con cola sin conexión",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f6ed",
+  "theme_color": "#073d32",
+  "icons": [{"src":"./icon.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]
+}

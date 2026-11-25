@@ -1,0 +1,221 @@
+/* GastoFolio V3: cola local duradera de gastos/fotos y documentos.
+   No almacena contraseñas ni utiliza service_role. Los archivos quedan en
+   IndexedDB del dispositivo hasta que Supabase confirme la sincronización.
+*/
+'use strict';
+window.GFOffline = (() => {
+  const DB_NAME = 'gastofolio_v3_local';
+  let opened, client=null, getUser=null, compress=null, refresh=null, setState=null;
+  let working=false, lastError='';
+  const state = { documentToAttach: null };
+  const $=id=>document.getElementById(id);
+  const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function openDb(){
+    if(!opened){
+      opened=new Promise((resolve,reject)=>{
+        if(!('indexedDB' in window))return reject(new Error('Este navegador no admite IndexedDB; no se puede guardar sin conexión.'));
+        const req=indexedDB.open(DB_NAME,1);
+        req.onupgradeneeded=()=>{
+          const db=req.result;
+          if(!db.objectStoreNames.contains('jobs'))db.createObjectStore('jobs',{keyPath:'id'});
+          if(!db.objectStoreNames.contains('cache'))db.createObjectStore('cache',{keyPath:'id'});
+        };
+        req.onsuccess=()=>resolve(req.result);
+        req.onerror=()=>reject(req.error||Error('No se pudo abrir IndexedDB.'));
+        req.onblocked=()=>reject(Error('Otra pestaña impide abrir el almacenamiento local. Cierra la pestaña anterior.'));
+      }).catch(e=>{opened=null;throw e});
+    }
+    return opened;
+  }
+  async function tx(storeName,mode,makeReq){
+    const db=await openDb();
+    return new Promise((resolve,reject)=>{
+      const t=db.transaction(storeName,mode);
+      let result;
+      const r=makeReq(t.objectStore(storeName));
+      r.onsuccess=()=>{result=r.result};
+      t.oncomplete=()=>resolve(result);
+      t.onerror=()=>reject(t.error||Error('El almacenamiento local falló.'));
+      t.onabort=()=>reject(t.error||Error('No se pudo confirmar el guardado local.'));
+    });
+  }
+  const putJob=job=>tx('jobs','readwrite',s=>s.put(job));
+  const rmJob=id=>tx('jobs','readwrite',s=>s.delete(id));
+  async function getJobs(uid){
+    const all=await tx('jobs','readonly',s=>s.getAll());
+    return (all||[]).filter(x=>x.uid===uid).sort((a,b)=>a.created.localeCompare(b.created));
+  }
+  const putCache=(id,data)=>tx('cache','readwrite',s=>s.put({id,data}));
+  async function getCache(id){const r=await tx('cache','readonly',s=>s.get(id));return r?.data||[];}
+  function userId(){const id=getUser?.()?.id;if(!id)throw Error('Debes entrar a tu cuenta de GastoFolio antes de guardar.');return id;}
+  function paintNetwork(){
+    const el=$('networkStatus');if(!el)return;
+    const online=navigator.onLine;
+    el.className='offline-banner'+(online?' online':'');
+    el.textContent=online?'🟢 Conexión detectada. Los pendientes se sincronizan automáticamente al abrir o recuperar internet.':'🟠 Sin internet. Los registros y archivos nuevos se guardarán en este teléfono (sin enviar a Supabase).';
+  }
+  function label(j){
+    if(j.kind==='expense')return 'Gasto · '+j.payload.categoria+' · $'+j.payload.valor_cop;
+    if(j.kind==='attach')return 'Foto adicional de gasto';
+    if(j.kind==='document')return (j.payload.tipo==='rut'?'RUT':j.payload.tipo==='cuenta_cobro'?'Cuenta de cobro':'Documento')+' · '+j.payload.establecimiento;
+    if(j.kind==='doc_file')return 'Archivo PDF o foto para un documento pendiente';
+    return j.kind;
+  }
+  async function displayQueue(){
+    paintNetwork();
+    if(!getUser?.()?.id)return;
+    try{
+      const jobs=await getJobs(userId());
+      const container=$('pendingList');container.replaceChildren();
+      for(const j of jobs){
+        const div=document.createElement('div');div.className='queue-card';
+        // Solo metadatos; nunca insertar fotos privadas en HTML.
+        div.innerHTML='<strong>⏳ '+escape(label(j))+'</strong><div class="muted">Guardado en el teléfono · '+escape(new Date(j.created).toLocaleString('es-CO'))+(j.blob?' · Archivo pendiente de subir':'')+'</div>';
+        container.appendChild(div);
+      }
+      setState?.('pendingStatus',jobs.length?`${jobs.length} registro(s) pendientes de sincronización. ${lastError?'Último error: '+lastError:''}`:'✅ No hay registros pendientes en este teléfono.',jobs.length?'':'ok');
+      const btn=$('syncNow');if(btn)btn.disabled=working||!navigator.onLine;
+    }catch(e){setState?.('pendingStatus','No se puede leer la cola local: '+e.message,'error');}
+  }
+  async function persist(job){
+    if(!job?.uid)throw Error('Usuario no identificado.');
+    try{await putJob(job)}catch(e){throw Error('El dispositivo no pudo conservar el registro (espacio insuficiente, modo privado o navegador bloqueado): '+e.message)}
+    if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
+    await displayQueue();
+    return job;
+  }
+  async function enqueueExpense(payload,blob){
+    const uid=userId();
+    return persist({id:payload.id,kind:'expense',uid,payload:{...payload,creado_por:uid},blob:blob||null,created:new Date().toISOString()});
+  }
+  async function enqueueAttach(expenseId,blob){
+    const uid=userId();
+    return persist({id:crypto.randomUUID(),kind:'attach',uid,expenseId,blob,created:new Date().toISOString()});
+  }
+  async function prepareDocument(file,convert){
+    if(!file)return null;
+    const isPdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name||'');
+    if(isPdf){
+      if(file.size>10*1024*1024)throw Error('El PDF supera 10 MB.');
+      if((await file.slice(0,5).text())!=='%PDF-')throw Error('El archivo no parece un PDF válido.');
+      return {blob:file,mime:'application/pdf',ext:'pdf',name:file.name||'documento.pdf'};
+    }
+    if(file.type.startsWith('image/')){
+      const blob=await convert(file);
+      return {blob,mime:'image/webp',ext:'webp',name:file.name||'imagen.webp'};
+    }
+    throw Error('Solo se aceptan PDF o imágenes.');
+  }
+  async function enqueueDocument(payload,prepared){
+    const uid=userId();
+    return persist({id:payload.id,kind:'document',uid,
+      payload:{...payload,creado_por:uid},blob:prepared?.blob||null,
+      mime:prepared?.mime||null,ext:prepared?.ext||null,filename:prepared?.name||null,
+      created:new Date().toISOString()});
+  }
+  async function enqueueDocFile(docId,prepared){
+    const uid=userId();
+    // Duplicar la operación de este documento produce un archivo inaccesible.
+    const existing=(await getJobs(uid)).some(j=>((j.kind==='doc_file'&&j.docId===docId)||(j.kind==='document'&&j.payload?.id===docId))&&j.blob);
+    if(existing)throw Error('Este documento ya tiene una subida pendiente. Espera que se sincronice.');
+    return persist({id:crypto.randomUUID(),kind:'doc_file',uid,docId,blob:prepared.blob,
+      mime:prepared.mime,ext:prepared.ext,filename:prepared.name,created:new Date().toISOString()});
+  }
+  async function saveCachedExpenses(uid,rows){return putCache('expenses:'+uid,rows||[])}
+  async function getCachedExpenses(uid){return getCache('expenses:'+uid)}
+  async function saveCachedDocs(uid,rows){return putCache('docs:'+uid,rows||[])}
+  async function getCachedDocs(uid){return getCache('docs:'+uid)}
+
+  // Comprobación de contenido de reintentos para no sustituir un archivo distinto.
+  async function sha(blob){
+    const data=await crypto.subtle.digest('SHA-256',await blob.arrayBuffer());
+    return [...new Uint8Array(data)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  async function safeUpload(bucket,path,blob,mime){
+    const {error}=await client.storage.from(bucket).upload(path,blob,{upsert:false,contentType:mime});
+    if(!error)return;
+    // Si el objeto se subió antes de que el cliente recibiera respuesta,
+    // aceptar reintento solo si es exactamente el mismo archivo.
+    const {data:already,error:probeError}=await client.storage.from(bucket).download(path);
+    if(probeError||!already)throw Error('No se pudo subir '+path+': '+error.message);
+    if(already.size!==blob.size||(await sha(already))!==(await sha(blob)))
+      throw Error('Ya existe otro archivo en esta ruta. No se sobrescribió nada.');
+  }
+  async function insertOnce(table,payload){
+    const {error}=await client.from(table).insert(payload);
+    if(!error)return;
+    if(error.code!=='23505')throw Error(table+': '+error.message);
+    const {data:existing,error:fetchError}=await client.from(table).select('*').eq('id',payload.id).maybeSingle();
+    if(fetchError||!existing||existing.creado_por!==payload.creado_por)throw Error('ID duplicado sin permiso para recuperar: '+payload.id);
+  }
+  async function linkReceipt(uid,id,blob){
+    const path=uid+'/'+id+'/recibo.webp';
+    await safeUpload('gastofolio-recibos',path,blob,'image/webp');
+    const {data:linked,error}=await client.from('gastofolio_gastos').update({comprobante_ruta:path}).eq('id',id).eq('creado_por',uid).select('id').maybeSingle();
+    if(error||!linked)throw Error('Se guardó la foto, pero no se confirmó su asociación al gasto: '+(error?.message||'Registro no encontrado.'));
+  }
+  async function uploadDoc(uid,id,blob,mime,ext,filename){
+    const path=uid+'/'+id+'/documento.'+ext;
+    await safeUpload('gastofolio-documentos',path,blob,mime);
+    const {data:linked,error}=await client.from('gastofolio_documentos').update({
+      archivo_ruta:path,archivo_tipo:mime,archivo_nombre:(filename||'').slice(0,255)||null,estado:'recibido'
+    }).eq('id',id).eq('creado_por',uid).select('id').maybeSingle();
+    if(error||!linked)throw Error('Documento cargado, pero no se confirmó su asociación al registro: '+(error?.message||'Registro no encontrado.'));
+  }
+  async function process(job){
+    if(job.kind==='expense'){
+      await insertOnce('gastofolio_gastos',job.payload);
+      if(job.blob)await linkReceipt(job.uid,job.payload.id,job.blob);
+    }else if(job.kind==='attach'){
+      await linkReceipt(job.uid,job.expenseId,job.blob);
+    }else if(job.kind==='document'){
+      await insertOnce('gastofolio_documentos',{
+        id:job.payload.id,creado_por:job.uid,tipo:job.payload.tipo,
+        establecimiento:job.payload.establecimiento,nit:job.payload.nit,
+        nota:job.payload.nota,gasto_id:job.payload.gasto_id,estado:'pendiente'
+      });
+      if(job.blob)await uploadDoc(job.uid,job.payload.id,job.blob,job.mime,job.ext,job.filename);
+    }else if(job.kind==='doc_file'){
+      await uploadDoc(job.uid,job.docId,job.blob,job.mime,job.ext,job.filename);
+    }else throw Error('Tipo de operación no reconocido: '+job.kind);
+  }
+  async function sync(manual=false){
+    paintNetwork();
+    if(working||!navigator.onLine||!client||!getUser?.()?.id){await displayQueue();return}
+    working=true;lastError='';
+    try{
+      const uid=userId();
+      const jobs=await getJobs(uid);
+      if(!jobs.length){await displayQueue();return}
+      setState?.('pendingStatus','Comprobando sesión y permiso de propietario...');
+      const {data,error}=await client.auth.getUser();
+      if(error||data?.user?.id!==uid)throw Error('La sesión venció o cambió. Entra nuevamente con internet.');
+      const auth=await client.rpc('gastofolio_is_owner');
+      if(auth.error||auth.data!==true)throw Error('El usuario no tiene autorización de propietario.');
+      let success=0;
+      for(const job of jobs){
+        if(!navigator.onLine)break;
+        try{
+          setState?.('pendingStatus',`Subiendo ${success+1} de ${jobs.length}: ${label(job)}...`);
+          await process(job);
+          await rmJob(job.id);success++;
+        }catch(e){lastError=e.message;console.warn('GastoFolio: operación conservada pendiente:',job.kind,e)}
+      }
+      if(success){
+        await refresh?.();
+        if(typeof window.refreshDocs==='function')await window.refreshDocs();
+      }
+    }catch(e){lastError=e.message; if(manual)setState?.('pendingStatus','No se pudo sincronizar: '+e.message,'error')}
+    finally{working=false;await displayQueue()}
+  }
+  function attach({db,getUser:currentUser,compress,update,setState:stateFn}){
+    client=db;getUser=currentUser;refresh=update;setState=stateFn;
+    paintNetwork();displayQueue();
+  }
+  return Object.assign(state,{
+    attach,paintNetwork,displayQueue,enqueueExpense,enqueueAttach,prepareDocument,
+    enqueueDocument,enqueueDocFile,saveCachedExpenses,getCachedExpenses,
+    saveCachedDocs,getCachedDocs,sync
+  });
+})();
