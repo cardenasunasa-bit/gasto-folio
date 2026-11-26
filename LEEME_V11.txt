@@ -1,0 +1,5 @@
+GastoFolio V11 - Cámara ligera para FACTURA, RUT y CUENTA DE COBRO; también para adjuntos posteriores desde el historial.
+
+PASOS: Sincroniza pendientes. Reemplaza index.html y sw.js en GitHub. NO borres datos del sitio ni offline-v6.js. Reabre con internet, comprueba cámara para cada archivo. No requiere SQL.
+
+Esta actualización no modifica Supabase ni PIPE NET. El acceso a la cámara requiere HTTPS y permiso del navegador. Si falla la captura integrada, usa foto desde galería.

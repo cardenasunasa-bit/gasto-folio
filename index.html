@@ -122,11 +122,15 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
         <div class="file-line">
           <label for="docRutFile">📄 RUT del establecimiento (PDF o foto)</label>
           <input type="file" id="docRutFile" accept="application/pdf,.pdf,image/*">
+          <button type="button" class="secondary" id="cameraRut">📸 Tomar foto del RUT (cámara ligera)</button>
+          <div id="rutCameraStatus" class="muted" aria-live="polite"></div>
           <label class="checkbox-row" for="docRutPendiente"><input type="checkbox" id="docRutPendiente"><span>El RUT todavía no me lo entregaron: guardar como pendiente</span></label>
         </div>
         <div class="file-line">
           <label for="docCuentaFile">🧾 Cuenta de cobro (PDF o fotografía, opcional)</label>
           <input type="file" id="docCuentaFile" accept="application/pdf,.pdf,image/*">
+          <button type="button" class="secondary" id="cameraCuenta">📸 Tomar foto de la cuenta de cobro (cámara ligera)</button>
+          <div id="cuentaCameraStatus" class="muted" aria-live="polite"></div>
         </div>
         <label for="docNota">Observación sobre los documentos (opcional)</label>
         <textarea id="docNota" maxlength="500" placeholder="Ej. Solicitar el RUT en la siguiente visita"></textarea>
@@ -197,6 +201,23 @@ $('clearPhoto').onclick=clearSelectedReceipt;
 // Camara interna de baja resolucion. Evita que el selector nativo de Android
 // genere una foto enorme antes de entregarla al navegador (memoria insuficiente).
 let cameraStream=null, cameraOpening=false, cameraGeneration=0;
+let cameraTarget='receipt', cameraExpenseId=null, cameraDocumentId=null;
+const CAMERA_NAMES={receipt:'FACTURA',rut:'RUT',account:'CUENTA DE COBRO',existingExpense:'FACTURA',existingRut:'RUT'};
+function assignCapturedFile(inputId,file){
+  // Permite que la captura use exactamente el mismo flujo que un archivo seleccionado.
+  const transfer=new DataTransfer();transfer.items.add(file);
+  $(inputId).files=transfer.files;
+  const label=inputId==='docRutFile'?'rutCameraStatus':'cuentaCameraStatus';
+  $(label).textContent='✅ Foto capturada y comprimida: '+(file.size/1024).toFixed(0)+' KB';
+}
+function startCameraFor(target,recordId=null){
+  cameraTarget=target;
+  cameraExpenseId=target==='existingExpense'?recordId:null;
+  cameraDocumentId=target==='existingRut'?recordId:null;
+  $('cameraHeading').textContent='📸 Fotografiar '+CAMERA_NAMES[target];
+  $('cameraSnap').textContent='📷 Capturar '+CAMERA_NAMES[target];
+  openLightCamera();
+}
 const cameraVideo=$('cameraVideo');
 function closeCamera(){
   cameraGeneration++;
@@ -217,7 +238,7 @@ async function openLightCamera(){
   $('cameraSnap').disabled=true;
   setState('cameraStatus','Solicitando permiso para usar la camara…');
   try{
-    // Ideal 1280x960, sin pedir imagenes de 12, 48 o 64 megapixeles.
+    // La resolución moderada se aplica a FACTURA, RUT y CUENTA DE COBRO.
     const stream=await navigator.mediaDevices.getUserMedia({
       audio:false,
       video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960},frameRate:{ideal:20,max:30}}
@@ -260,11 +281,22 @@ async function captureLightPhoto(){
     }
     // Liberar el canvas y cerrar el video antes de mostrar la vista previa.
     canvas.width=1;canvas.height=1;canvas=null;
-    const name='factura_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webp';
+    const name=(cameraTarget==='rut'||cameraTarget==='existingRut'?'rut':cameraTarget==='account'?'cuenta_cobro':'factura')+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webp';
     const file=new File([blob],name,{type:'image/webp',lastModified:Date.now()});
+    const target=cameraTarget, expenseId=cameraExpenseId, docId=cameraDocumentId;
     closeCamera();
-    selectReceipt(file);
-    setState('saveStatus','✅ Fotografia lista y comprimida ('+(blob.size/1024).toFixed(0)+' KB). Completa el gasto y pulsa Guardar.','ok');
+    if(target==='receipt'){
+      selectReceipt(file);
+      setState('saveStatus','✅ FACTURA lista ('+(blob.size/1024).toFixed(0)+' KB). Completa el gasto y pulsa Guardar.','ok');
+    }else if(target==='rut'){
+      assignCapturedFile('docRutFile',file);
+    }else if(target==='account'){
+      assignCapturedFile('docCuentaFile',file);
+    }else if(target==='existingExpense'){
+      await saveExpenseAttachment(file,expenseId);
+    }else if(target==='existingRut'){
+      await saveRutAttachment(file,docId);
+    }
   }catch(error){
     setState('cameraStatus','No se pudo preparar la foto: '+error.message+'. Puedes cerrar y usar «Elegir FACTURA».','error');
     button.disabled=false;
@@ -272,7 +304,9 @@ async function captureLightPhoto(){
     if(canvas){canvas.width=1;canvas.height=1;}
   }
 }
-$('openCamera').addEventListener('click',openLightCamera);
+$('openCamera').addEventListener('click',()=>startCameraFor('receipt'));
+$('cameraRut').addEventListener('click',()=>startCameraFor('rut'));
+$('cameraCuenta').addEventListener('click',()=>startCameraFor('account'));
 $('cameraSnap').addEventListener('click',captureLightPhoto);
 $('cameraCancel').addEventListener('click',closeCamera);
 document.addEventListener('visibilitychange',()=>{if(document.hidden && cameraStream)closeCamera();});
@@ -348,8 +382,9 @@ function render(){
      '<div class="amount">'+html(cop(x.valor_cop))+'</div><div class="note">'+html(x.nota||'Sin observaciones')+'</div>'+ 
      '<div class="meta">📅 '+html(dt(x.fecha_gasto))+'</div><div class="meta">Vence: '+html(dt(x.expira_en))+'</div>'+ 
      '<div class="row"><button type="button" class="secondary" data-action="'+(hasFile?'view':'attach')+'" data-id="'+html(x.id)+'">'+(hasFile?(isPdf?'📄 Descargar PDF':'📷 Ver foto'):'📎 Adjuntar PDF o foto')+'</button>'+ 
+     (!hasFile?'<button type="button" class="secondary" data-action="camera-attach" data-id="'+html(x.id)+'">📸 Fotografiar factura</button>':'')+
      '<button type="button" class="secondary" data-action="pdf" data-id="'+html(x.id)+'">📃 Gasto + documentos PDF</button>'+ 
-     (docs.some(d=>d.gasto_id===x.id&&d.tipo==='rut'&&!d.archivo_ruta)?'<button type="button" class="secondary" data-action="attach-rut" data-id="'+html(x.id)+'">📎 Adjuntar RUT pendiente</button>':'')+
+     (docs.some(d=>d.gasto_id===x.id&&d.tipo==='rut'&&!d.archivo_ruta)?'<button type="button" class="secondary" data-action="attach-rut" data-id="'+html(x.id)+'">📎 Adjuntar RUT pendiente</button><button type="button" class="secondary" data-action="camera-rut" data-id="'+html(x.id)+'">📸 Fotografiar RUT pendiente</button>':'')+
      '<button type="button" class="danger" data-action="delete" data-id="'+html(x.id)+'">🗑️ Eliminar definitivamente</button></div>';
    target.appendChild(item);
  }
@@ -439,6 +474,12 @@ $('expensesList').addEventListener('click',async event=>{
      if(!pendingRut)throw Error('No hay un RUT pendiente para este gasto.');
      GFOffline.documentToAttach=pendingRut.id;
      $('attachDocFile').click();
+   }else if(button.dataset.action==='camera-rut'){
+     const pendingRut=docs.find(d=>d.gasto_id===expense.id&&d.tipo==='rut'&&!d.archivo_ruta);
+     if(!pendingRut)throw Error('No hay un RUT pendiente para este gasto.');
+     startCameraFor('existingRut',pendingRut.id);
+   }else if(button.dataset.action==='camera-attach'){
+     startCameraFor('existingExpense',expense.id);
    }else if(button.dataset.action==='attach'){
      attachExpenseId=expense.id;$('attachPhoto').click();
    }else if(button.dataset.action==='view'){
@@ -471,15 +512,20 @@ $('expensesList').addEventListener('click',async event=>{
  }catch(e){setState('listStatus','No se pudo realizar la operación: '+e.message,'error')}
  finally{button.disabled=false}
 });
-$('attachPhoto').addEventListener('change',async e=>{
- const file=e.target.files[0];const expense=entries.find(x=>x.id===attachExpenseId);e.target.value='';
- if(!file||!expense)return;
+async function saveExpenseAttachment(file,expenseId){
+ const expense=entries.find(x=>x.id===expenseId);
+ if(!file||!expense)throw Error('No se encontró el gasto al que quieres adjuntar la foto.');
  try{
    const prepared=await GFOffline.prepareDocument(file,compressWebp);
    await GFOffline.enqueueAttach(expense.id,prepared);
-   setState('listStatus',navigator.onLine?'Comprobante guardado en cola; sincronizando…':'Comprobante guardado en el teléfono para subir cuando vuelva internet.','ok');
+   setState('listStatus',navigator.onLine?'Comprobante guardado localmente; sincronizando…':'Comprobante guardado en el teléfono; pendiente de conexión.','ok');
    GFOffline.sync();
- }catch(err){setState('listStatus','No se guardó la fotografía: '+err.message,'error')}
+ }catch(err){setState('listStatus','No se guardó el comprobante: '+err.message,'error');throw err;}
+}
+$('attachPhoto').addEventListener('change',async e=>{
+ const file=e.target.files[0],id=attachExpenseId;e.target.value='';
+ if(!file||!id)return;
+ try{await saveExpenseAttachment(file,id)}catch(err){console.warn('Error adjuntando comprobante',err)}
 });
 $('closePreview').onclick=()=>{$('previewModal').classList.add('hidden');$('previewImage').removeAttribute('src');if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null};
 $('filterCategoria').onchange=render;$('filterMes').onchange=render;$('refreshExpenses').onclick=refresh;
@@ -698,15 +744,19 @@ async function refreshDocs(strict=false){
     render();
   }
 }
+async function saveRutAttachment(file,docId){
+ if(!file||!docId)throw Error('No se encontró el RUT pendiente.');
+ try{
+   const prepared=await GFOffline.prepareDocument(file,compressWebp);
+   await GFOffline.enqueueDocFile(docId,prepared);
+   setState('listStatus','RUT guardado en este teléfono; sincronizando cuando haya conexión.','ok');
+   if(navigator.onLine){await GFOffline.sync(true);await refreshDocs();}
+ }catch(e){setState('listStatus','No se guardó el RUT: '+e.message,'error');throw e;}
+}
 $('attachDocFile').addEventListener('change',async ev=>{
-  const file=ev.target.files[0];ev.target.value='';const docId=GFOffline.documentToAttach;
-  if(!file||!docId)return;
-  try{
-    const prepared=await GFOffline.prepareDocument(file,compressWebp);
-    await GFOffline.enqueueDocFile(docId,prepared);
-    setState('listStatus','RUT guardado en este teléfono; se está sincronizando.','ok');
-    if(navigator.onLine){await GFOffline.sync(true);await refreshDocs();}
-  }catch(e){setState('listStatus','No se guardó el RUT: '+e.message,'error')}
+ const file=ev.target.files[0],docId=GFOffline.documentToAttach;ev.target.value='';
+ if(!file||!docId)return;
+ try{await saveRutAttachment(file,docId)}catch(e){console.warn('Error adjuntando RUT',e)}
 });
 $('syncNow').onclick=()=>GFOffline.sync(true);
 // La aplicación se sincroniza al volver internet o recuperar el foco.
