@@ -9,7 +9,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./config.js"></script>
-<script src="./offline.js"></script>
+<script src="./offline-v6.js"></script>
 <style>
 
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#173c32;background:#f7f6ed}*{box-sizing:border-box}
@@ -126,7 +126,7 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
       </div>
       <div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">💾 Guardar gasto, recibo y documentos</button></div>
     </form>
-    <div id="saveStatus" class="status" aria-live="polite">El gasto, su recibo y los documentos se guardan juntos en el teléfono y se sincronizan al regresar internet.</div>
+    <div id="saveStatus" class="status" aria-live="polite">Con internet se confirma la sincronización en Supabase. Sin conexión, el gasto y sus archivos se conservan juntos en este teléfono hasta poder enviarlos.</div>
   </section>
   <section class="card"><h2>📂 Historial por categorías</h2><div class="filters"><div><label for="filterCategoria">Categoría</label><select id="filterCategoria"><option value="">Todas las categorías</option><option value="comida">Comida</option><option value="combustible">Combustible</option><option value="peajes">Peajes</option><option value="calibracion_llantas">Calibración de llantas</option><option value="agua">Agua</option><option value="otros">Otros</option></select></div><div><label for="filterMes">Mes (opcional)</label><input type="month" id="filterMes"></div></div><div class="row" style="margin-top:13px"><button type="button" id="refreshExpenses" class="secondary">Actualizar</button><button type="button" id="exportPdf">📄 Descargar PDF completo (gasto + RUT)</button><button type="button" id="exportCsv" class="secondary">Descargar informe CSV</button><button type="button" id="exportZip" class="secondary">Descargar gastos + fotos (ZIP)</button></div><p class="muted">Cada gasto ocupa su primera hoja con el valor, la fecha, la observación y la foto del recibo. Después vienen las hojas del RUT y la cuenta de cobro vinculados. Con una foto del recibo y un RUT de una sola página, el resultado tendrá 2 hojas. Si un PDF original tiene varias, se conservan todas. Descarga el informe después de sincronizar.</p><div id="listStatus" class="status" aria-live="polite">Consultando registros…</div><div class="expenses" id="expensesList"></div></section>
 <section class="card" id="documentsSection">
@@ -185,6 +185,10 @@ function imageLoad(file){return new Promise((resolve,reject)=>{const img=new Ima
 function encodeWebp(canvas,quality){return new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality))}
 async function compressWebp(file){const img=await imageLoad(file);let longest=2200;for(let attempt=0;attempt<6;attempt++){const scale=Math.min(1,longest/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingQuality='high';ctx.drawImage(img,0,0,canvas.width,canvas.height);const blob=await encodeWebp(canvas,attempt<2?.9:.82);if(blob?.type==='image/webp'&&blob.size<=3*1024*1024)return blob;longest=Math.round(longest*.82)}throw new Error('No fue posible preparar una imagen WebP de máximo 3 MB. Intenta otra foto.')}
 async function confirmOwner(){
+  if(!window.GFOffline || window.GFOffline.version !== '6.0.0' ||
+     typeof window.GFOffline.enqueueExpenseBundle !== 'function'){
+    throw Error('No cargó la versión V6 del módulo de sincronización. Abre GastoFolio con internet y actualiza la página. NO borres los datos del sitio ni los registros pendientes.');
+  }
   let user;
   if(navigator.onLine){
     const {data:u,error:ue}=await db.auth.getUser();
@@ -269,7 +273,7 @@ $('expenseForm').addEventListener('submit',async event=>{
    const account=$('docCuentaFile').files[0]||null;
    const pending=$('docRutPendiente').checked;
    if((rut||account||pending)&&!establishment)throw Error('Para guardar un RUT o una cuenta de cobro, escribe el nombre del establecimiento.');
-   setState('saveStatus','Preparando el recibo y documentos para guardarlos juntos en este teléfono…');
+   setState('saveStatus','Preparando el gasto y sus documentos…');
    const preparedReceipt=receiptFile?await GFOffline.prepareDocument(receiptFile,compressWebp):null;
    const docItems=[];
    if(rut||pending){
@@ -280,16 +284,30 @@ $('expenseForm').addEventListener('submit',async event=>{
      docItems.push({payload:{id:crypto.randomUUID(),tipo:'cuenta_cobro',establecimiento:establishment,nit,nota:docNote,gasto_id:expenseId},
        prepared:await GFOffline.prepareDocument(account,compressWebp)});
    }
-   // Una sola transacción IndexedDB: si no caben todas las fotos/PDF, no se guarda a medias.
-   await GFOffline.enqueueExpenseBundle(
+   // La operación siempre se conserva primero EN BLOQUE en IndexedDB.
+   // Con internet, esperamos la subida antes de anunciar éxito remoto.
+   // Sin internet o si falla la red, conservamos todos los archivos para reintento.
+   if(typeof window.GFOffline?.enqueueExpenseBundle !== 'function')
+     throw Error('Falta el módulo V6. No se guardó el gasto: recarga la página con internet, sin borrar datos del navegador.');
+   const jobs=await GFOffline.enqueueExpenseBundle(
      {id:expenseId,categoria:$('categoria').value,valor_cop:value,nota:$('nota').value.trim()||null,fecha_gasto:new Date().toISOString()},
      preparedReceipt,docItems
    );
+   // Solo limpiar el formulario cuando IndexedDB confirmó los archivos completos.
    $('expenseForm').reset();clearSelectedReceipt();
-   setState('saveStatus',navigator.onLine?
-     '✅ Gasto, recibo y documentos guardados juntos en el teléfono. Sincronizando…':
-     '✅ Todo guardado sin internet. Se subirá automáticamente cuando vuelva la conexión.','ok');
-   GFOffline.sync();
+   if(navigator.onLine){
+     setState('saveStatus','⏳ Gasto y documentos protegidos en el teléfono. Confirmando subida a Supabase…');
+     await GFOffline.sync(true);
+     const remaining=await GFOffline.getPendingJobIds(jobs.map(j=>j.id));
+     if(remaining.length===0){
+       setState('saveStatus','✅ Guardado y sincronizado en Supabase: gasto, factura y documentos.','ok');
+     }else{
+       const detail=GFOffline.getSyncError();
+       setState('saveStatus','⏳ Guardado en el teléfono; '+remaining.length+' archivo(s)/registro(s) pendientes de confirmar en Supabase. '+(detail?'Motivo: '+detail+'. ':'')+'Se reintentará automáticamente. No borres los datos del sitio.','error');
+     }
+   }else{
+     setState('saveStatus','✅ Guardado sin internet en este teléfono, con todos los archivos. Se sincronizará cuando haya conexión y abras la aplicación.','ok');
+   }
  }catch(e){setState('saveStatus','NO se guardó el registro: '+e.message+'. Conserva los documentos originales y vuelve a intentar.','error')}
  finally{busy=false;$('saveExpense').disabled=false}
 });

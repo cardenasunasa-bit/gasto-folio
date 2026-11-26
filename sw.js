@@ -1,8 +1,8 @@
 /* GastoFolio V5 — caché solamente de archivos estáticos públicos.
    Nunca almacena consultas de Supabase, tokens ni archivos privados.
 */
-const CACHE='gastofolio-shell-v5-20261125';
-const APP=['./','./index.html','./config.js','./offline.js','./logo.png','./icon.png','./manifest.webmanifest'];
+const CACHE='gastofolio-shell-v6-20261125';
+const APP=['./','./index.html','./config.js','./offline-v6.js','./logo.png','./icon.png','./manifest.webmanifest'];
 const VENDORS=[
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
@@ -40,6 +40,13 @@ self.addEventListener('fetch',evt=>{
  }
  evt.respondWith((async()=>{
    const cache=await caches.open(CACHE);
+   const isCode=ours && (/\/(offline-v6[.]js|config[.]js|index[.]html)$/.test(url.pathname));
+   if(isCode){
+     try{const response=await fetch(new Request(req,{cache:'no-store'}));
+       if(response.ok){await cache.put(req,response.clone());return response;}}
+     catch{}
+     return await cache.match(req)||Response.error();
+   }
    const cached=await cache.match(req);
    if(cached)return cached;
    try{const response=await fetch(req);if(response&&(response.ok||response.type==='opaque'))cache.put(req,response.clone());return response}
