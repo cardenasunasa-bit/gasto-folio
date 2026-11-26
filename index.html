@@ -10,7 +10,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./config.js"></script>
-<script src="./offline-v6.js"></script>
+<script src="./offline-v12.js"></script>
 <style>
 
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#173c32;background:#f7f6ed}*{box-sizing:border-box}
@@ -74,7 +74,7 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
   <p class="tiny">Por seguridad, solo el propietario autorizado puede consultar o guardar información. No hay registro público de usuarios.</p>
  </section>
 </div>
-<header class="card hero hidden" id="appHeader"><div><img class="logo-small" src="./logo.png" alt="Mantenimiento Bosconia"><div class="muted intro">Mis gastos, en orden · Archivo privado de comprobantes</div></div><button type="button" id="exitButton" class="secondary">Cerrar sesión</button></header>
+<header class="card hero hidden" id="appHeader"><div><img class="logo-small" src="./logo.png" alt="Mantenimiento Bosconia"><div class="muted intro">Mis gastos, en orden · Archivo privado de comprobantes · V12</div></div><button type="button" id="exitButton" class="secondary">Cerrar sesión</button></header>
 <section id="gastosApp" class="hidden">
   <div id="networkStatus" class="offline-banner">Comprobando conexión...</div>
   <section class="card">
@@ -123,20 +123,20 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
           <label for="docRutFile">📄 RUT del establecimiento (PDF o foto)</label>
           <input type="file" id="docRutFile" accept="application/pdf,.pdf,image/*">
           <button type="button" class="secondary" id="cameraRut">📸 Tomar foto del RUT (cámara ligera)</button>
-          <div id="rutCameraStatus" class="muted" aria-live="polite"></div>
+          <div id="rutCameraStatus" class="muted" aria-live="polite"></div><button id="clearRut" type="button" class="secondary hidden">Quitar RUT</button>
           <label class="checkbox-row" for="docRutPendiente"><input type="checkbox" id="docRutPendiente"><span>El RUT todavía no me lo entregaron: guardar como pendiente</span></label>
         </div>
         <div class="file-line">
           <label for="docCuentaFile">🧾 Cuenta de cobro (PDF o fotografía, opcional)</label>
           <input type="file" id="docCuentaFile" accept="application/pdf,.pdf,image/*">
           <button type="button" class="secondary" id="cameraCuenta">📸 Tomar foto de la cuenta de cobro (cámara ligera)</button>
-          <div id="cuentaCameraStatus" class="muted" aria-live="polite"></div>
+          <div id="cuentaCameraStatus" class="muted" aria-live="polite"></div><button id="clearAccount" type="button" class="secondary hidden">Quitar cuenta de cobro</button>
         </div>
         <label for="docNota">Observación sobre los documentos (opcional)</label>
         <textarea id="docNota" maxlength="500" placeholder="Ej. Solicitar el RUT en la siguiente visita"></textarea>
         <p class="form-tip">Los PDF admiten hasta 10 MB por archivo. Las fotos se comprimen. Si falta el RUT, podrás adjuntarlo después desde el botón del gasto correspondiente en el historial.</p>
       </div>
-      <div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">💾 Guardar gasto, recibo y documentos</button></div>
+      <div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">💾 Guardar gasto, recibo y documentos</button><button id="discardDraft" type="button" class="secondary">Descartar borrador</button></div>
     </form>
     <div id="saveStatus" class="status" aria-live="polite">Con internet se confirma la sincronización en Supabase. Sin conexión, el gasto y sus archivos se conservan juntos en este teléfono hasta poder enviarlos.</div>
   </section>
@@ -172,173 +172,157 @@ const dateForExport=s=>new Intl.DateTimeFormat('es-CO',{timeZone:'America/Bogota
 const html=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let me=null,entries=[],receiptFile=null,photoObjectUrl=null,previewObjectUrl=null,attachExpenseId=null,busy=false;
 const setState=(id,msg,type='')=>{let el=$(id);el.textContent=msg;el.className='status'+(type?' '+type:'')};
-function clearSelectedReceipt(){
-  receiptFile=null;
-  if(photoObjectUrl)URL.revokeObjectURL(photoObjectUrl);
-  photoObjectUrl=null;
-  $('photoPreview').classList.add('hidden');$('photoPreview').removeAttribute('src');
-  $('fileLabel').textContent='Sin comprobante seleccionado';$('clearPhoto').classList.add('hidden');
-  $('chooseGallery').value='';
+let draftFiles={receipt:null,rut:null,account:null},draftWrite=Promise.resolve(),attachmentBusy=false,pdfBusy=false,draftReady=false;
+const draftFields=['categoria','valor','nota','docEstablecimiento','docNit','docNota','docRutPendiente'];
+const draftSnapshot=()=>({fields:Object.fromEntries(draftFields.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value])),files:{...draftFiles}});
+function persistDraft(){
+  if(!me||!draftReady)return Promise.reject(Error('Borrador no disponible.'));
+  const uid=me.id,snapshot=draftSnapshot();
+  const task=draftWrite.catch(()=>{}).then(()=>GFOffline.saveDraft(uid,snapshot));
+  draftWrite=task;return task;
 }
-function selectReceipt(file){
-  if(!file)return;
-  const isPdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name||'');
-  if(!isPdf&&!file.type.startsWith('image/')){
-    setState('saveStatus','Solo puedes adjuntar PDF o una fotografía.','error');return;
+function showDraftFiles(){
+  receiptFile=draftFiles.receipt?.blob||null;
+  if(photoObjectUrl)URL.revokeObjectURL(photoObjectUrl);
+  photoObjectUrl=null;$('photoPreview').classList.add('hidden');$('photoPreview').removeAttribute('src');
+  const r=draftFiles.receipt;
+  if(r&&r.mime==='image/webp'){photoObjectUrl=URL.createObjectURL(r.blob);$('photoPreview').src=photoObjectUrl;$('photoPreview').classList.remove('hidden');}
+  $('fileLabel').textContent=r?'✅ '+r.name+' · '+Math.ceil(r.blob.size/1024)+' KB':'Sin comprobante seleccionado';
+  $('clearPhoto').classList.toggle('hidden',!r);
+  for(const [key,status,clear] of [['rut','rutCameraStatus','clearRut'],['account','cuentaCameraStatus','clearAccount']]){
+    const f=draftFiles[key];$(status).textContent=f?'✅ '+f.name+' · '+Math.ceil(f.blob.size/1024)+' KB':'';$(clear).classList.toggle('hidden',!f);
   }
-  if(isPdf&&file.size>10*1024*1024){setState('saveStatus','El PDF no puede superar 10 MB.','error');return}
-  receiptFile=file;
-  if(photoObjectUrl)URL.revokeObjectURL(photoObjectUrl);
-  photoObjectUrl=null;
-  $('photoPreview').classList.add('hidden');$('photoPreview').removeAttribute('src');
-  if(!isPdf){photoObjectUrl=URL.createObjectURL(file);$('photoPreview').src=photoObjectUrl;$('photoPreview').classList.remove('hidden')}
-  $('clearPhoto').classList.remove('hidden');
-  $('fileLabel').textContent=(isPdf?'📄 PDF: ':'🖼️ Foto: ')+(file.name||'comprobante')+' · '+(file.size/1024/1024).toFixed(2)+' MB';
 }
-$('chooseGallery').addEventListener('change',e=>selectReceipt(e.target.files[0]));
-$('clearPhoto').onclick=clearSelectedReceipt;
+function clearSelectedReceipt(){draftFiles.receipt=null;showDraftFiles();$('chooseGallery').value='';}
+function resetDraftUi(){ $('expenseForm').reset();draftFiles={receipt:null,rut:null,account:null};showDraftFiles(); }
+async function restoreDraft(){
+  draftReady=false;resetDraftUi();const d=await GFOffline.getDraft(me.id);
+  if(d?.fields){for(const id of draftFields){if(Object.hasOwn(d.fields,id)){if($(id).type==='checkbox')$(id).checked=!!d.fields[id];else $(id).value=d.fields[id];}}}
+  if(d?.files){for(const k of Object.keys(draftFiles)){const f=d.files[k];if(f?.blob instanceof Blob&&f.blob.size>0)draftFiles[k]=f;}}
+  showDraftFiles();draftReady=true;
+  if(d?.fields)setState('saveStatus','Borrador recuperado de este teléfono. Revisa los datos y adjuntos antes de guardar.','ok');
+}
+async function putDraftFile(target,file){
+  const prepared=await GFOffline.prepareDocument(file,compressWebp);
+  if(!prepared?.blob?.size)throw Error('El archivo está vacío.');
+  const old=draftFiles[target];draftFiles[target]=prepared;
+  try{await persistDraft();}catch(e){draftFiles[target]=old;throw e;}
+  showDraftFiles();
+  setState('saveStatus','✅ Archivo guardado en el borrador local. Completa el gasto y pulsa Guardar.','ok');
+}
+async function chooseDraftFile(target,input){
+  const file=input.files[0];input.value='';if(!file||busy||attachmentBusy||pdfBusy||!draftReady)return;
+  attachmentBusy=true;$('saveExpense').disabled=true;
+  try{$('expenseForm').inert=true;setState('saveStatus','Preparando y guardando archivo en el teléfono…');await putDraftFile(target,file);}
+  catch(e){setState('saveStatus','No se guardó el archivo: '+e.message,'error');}
+  finally{attachmentBusy=false;$('expenseForm').inert=false;$('saveExpense').disabled=false;}
+}
+async function removeDraftFile(target){
+ if(busy||attachmentBusy||pdfBusy||!draftReady)return;attachmentBusy=true;$('expenseForm').inert=true;const old=draftFiles[target];draftFiles[target]=null;
+ try{await persistDraft();showDraftFiles();}catch(e){draftFiles[target]=old;setState('saveStatus','No se pudo quitar el archivo: '+e.message,'error');}
+ finally{attachmentBusy=false;$('expenseForm').inert=false;}
+}
+$('chooseGallery').addEventListener('change',e=>chooseDraftFile('receipt',e.target));
+$('docRutFile').addEventListener('change',e=>chooseDraftFile('rut',e.target));
+$('docCuentaFile').addEventListener('change',e=>chooseDraftFile('account',e.target));
+$('clearPhoto').onclick=()=>removeDraftFile('receipt');$('clearRut').onclick=()=>removeDraftFile('rut');$('clearAccount').onclick=()=>removeDraftFile('account');
+$('expenseForm').addEventListener('input',e=>{if(draftReady&&!busy&&!attachmentBusy&&draftFields.includes(e.target.id))persistDraft().catch(err=>setState('saveStatus','No se pudo conservar el borrador: '+err.message,'error'));});
+$('discardDraft').onclick=async()=>{if(busy||attachmentBusy||pdfBusy||!draftReady||!confirm('¿Descartar los datos y fotos del borrador actual? No afecta los gastos guardados.'))return;attachmentBusy=true;$('expenseForm').inert=true;try{await draftWrite.catch(()=>{});await GFOffline.clearDraft(me.id);resetDraftUi();setState('saveStatus','Borrador descartado.','ok');}catch(e){setState('saveStatus',e.message,'error');}finally{attachmentBusy=false;$('expenseForm').inert=false;}};
 
 // Camara interna de baja resolucion. Evita que el selector nativo de Android
 // genere una foto enorme antes de entregarla al navegador (memoria insuficiente).
 let cameraStream=null, cameraOpening=false, cameraGeneration=0;
 let cameraTarget='receipt', cameraExpenseId=null, cameraDocumentId=null;
 const CAMERA_NAMES={receipt:'FACTURA',rut:'RUT',account:'CUENTA DE COBRO',existingExpense:'FACTURA',existingRut:'RUT'};
-function assignCapturedFile(inputId,file){
-  // Permite que la captura use exactamente el mismo flujo que un archivo seleccionado.
-  const transfer=new DataTransfer();transfer.items.add(file);
-  $(inputId).files=transfer.files;
-  const label=inputId==='docRutFile'?'rutCameraStatus':'cuentaCameraStatus';
-  $(label).textContent='✅ Foto capturada y comprimida: '+(file.size/1024).toFixed(0)+' KB';
+let cameraCapturing=false;
+const cameraVideo=$('cameraVideo');
+function releaseCamera(){
+  if(cameraStream){for(const track of cameraStream.getTracks())track.stop();cameraStream=null;}
+  cameraVideo.pause();cameraVideo.srcObject=null;$('cameraSnap').disabled=true;
+}
+function closeCamera(){
+  cameraGeneration++;releaseCamera();$('cameraPanel').classList.add('hidden');
 }
 function startCameraFor(target,recordId=null){
-  cameraTarget=target;
-  cameraExpenseId=target==='existingExpense'?recordId:null;
-  cameraDocumentId=target==='existingRut'?recordId:null;
-  $('cameraHeading').textContent='📸 Fotografiar '+CAMERA_NAMES[target];
-  $('cameraSnap').textContent='📷 Capturar '+CAMERA_NAMES[target];
+  if(cameraOpening||cameraStream||cameraCapturing||attachmentBusy||busy||pdfBusy||!draftReady)return;
+  if(previewObjectUrl){$('closePreview').click();}
+  cameraTarget=target;cameraExpenseId=target==='existingExpense'?recordId:null;cameraDocumentId=target==='existingRut'?recordId:null;
+  $('cameraHeading').textContent='📸 Fotografiar '+CAMERA_NAMES[target];$('cameraSnap').textContent='📷 Capturar '+CAMERA_NAMES[target];
   openLightCamera();
 }
-const cameraVideo=$('cameraVideo');
-function closeCamera(){
-  cameraGeneration++;
-  if(cameraStream){for(const track of cameraStream.getTracks())track.stop();cameraStream=null;}
-  cameraVideo.pause();cameraVideo.srcObject=null;
-  $('cameraSnap').disabled=true;
-  $('cameraPanel').classList.add('hidden');
-}
 async function openLightCamera(){
-  if(cameraOpening||cameraStream)return;
-  if(!navigator.mediaDevices?.getUserMedia){
-    setState('saveStatus','Este navegador no permite abrir la camara integrada. Usa la camara normal del telefono y luego «Elegir FACTURA (PDF o foto)».','error');
-    return;
-  }
-  cameraOpening=true;
-  const generation=++cameraGeneration;
-  $('cameraPanel').classList.remove('hidden');
-  $('cameraSnap').disabled=true;
-  setState('cameraStatus','Solicitando permiso para usar la camara…');
+  if(!navigator.mediaDevices?.getUserMedia){setState('saveStatus','Cámara integrada no disponible. Toma la foto con la cámara del teléfono y adjúntala desde la galería.','error');return;}
+  cameraOpening=true;const generation=++cameraGeneration;
+  $('cameraPanel').classList.remove('hidden');$('cameraSnap').disabled=true;$('cameraCancel').disabled=false;
+  setState('cameraStatus','Solicitando permiso de cámara…');
   try{
-    // La resolución moderada se aplica a FACTURA, RUT y CUENTA DE COBRO.
-    const stream=await navigator.mediaDevices.getUserMedia({
-      audio:false,
-      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960},frameRate:{ideal:20,max:30}}
-    });
+    // Límites reales, no solo preferencias: evita negociar 4K y tasas elevadas.
+    const constraints={audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:960,max:1280},height:{ideal:960,max:1280},frameRate:{ideal:10,max:15}}};
+    let stream;try{stream=await navigator.mediaDevices.getUserMedia(constraints);}catch(e){if(e.name!=='OverconstrainedError'||generation!==cameraGeneration)throw e;stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:640,max:1280},height:{ideal:480,max:1280}}});}
     if(generation!==cameraGeneration){stream.getTracks().forEach(t=>t.stop());return;}
-    cameraStream=stream;
-    cameraVideo.srcObject=stream;
+    cameraStream=stream;cameraVideo.srcObject=stream;
+    for(const track of stream.getVideoTracks())track.addEventListener('ended',()=>{if(cameraStream===stream){closeCamera();setState('saveStatus','Android interrumpió la cámara. El borrador permanece guardado. Vuelve a abrirla o usa la galería.','error');}},{once:true});
     await cameraVideo.play();
     if(generation!==cameraGeneration)return;
-    $('cameraSnap').disabled=false;
-    setState('cameraStatus','Apunta al recibo y pulsa «Capturar factura».','ok');
-  }catch(error){
-    const msg=error?.name==='NotAllowedError'?'Permiso de camara denegado. Revisa los permisos del sitio en Chrome.':
-      error?.name==='NotReadableError'?'La camara esta ocupada o Android no pudo iniciarla. Cierra otras aplicaciones que la usen.':
-      'No se pudo abrir la camara de baja memoria: '+(error?.message||'error desconocido')+'.';
-    closeCamera();
-    setState('saveStatus',msg+' Puedes tomar una foto con la camara normal y elegirla desde la galeria.','error');
-  }finally{cameraOpening=false;}
+    if(!cameraVideo.videoWidth)throw Error('La cámara no entregó una imagen.');
+    $('cameraSnap').disabled=false;setState('cameraStatus','Acerca el comprobante y pulsa Capturar.','ok');
+  }catch(e){if(generation===cameraGeneration){closeCamera();setState('saveStatus','No se pudo abrir la cámara: '+(e.message||e.name)+'. Usa la cámara del teléfono y adjunta desde la galería.','error');}}
+  finally{cameraOpening=false;}
 }
 async function captureLightPhoto(){
-  if(!cameraStream||cameraVideo.readyState<2||!cameraVideo.videoWidth){
-    setState('cameraStatus','La camara aun no esta lista. Intenta nuevamente.','error');return;
-  }
-  const button=$('cameraSnap');button.disabled=true;
+  if(cameraCapturing||!cameraStream||cameraVideo.readyState<2||!cameraVideo.videoWidth)return;
+  cameraCapturing=true;attachmentBusy=true;$('cameraSnap').disabled=true;$('cameraCancel').disabled=true;$('saveExpense').disabled=true;
+  const target=cameraTarget,expenseId=cameraExpenseId,docId=cameraDocumentId,uid=me?.id;
   let canvas;
   try{
-    const sourceW=cameraVideo.videoWidth,sourceH=cameraVideo.videoHeight;
-    const ratio=Math.min(1,1280/Math.max(sourceW,sourceH));
-    canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(sourceW*ratio));
-    canvas.height=Math.max(1,Math.round(sourceH*ratio));
-    const ctx=canvas.getContext('2d',{alpha:false});
-    if(!ctx)throw Error('El navegador no pudo preparar la fotografia.');
-    ctx.drawImage(cameraVideo,0,0,canvas.width,canvas.height);
-    let blob=await encodeWebp(canvas,.78);
-    if(!blob||blob.type!=='image/webp')throw Error('Este navegador no pudo convertir la captura a WebP.');
-    if(blob.size>3*1024*1024){
-      blob=await encodeWebp(canvas,.56);
-      if(!blob||blob.size>3*1024*1024)throw Error('La captura supera el limite de 3 MB.');
-    }
-    // Liberar el canvas y cerrar el video antes de mostrar la vista previa.
+    const sw=cameraVideo.videoWidth,sh=cameraVideo.videoHeight,ratio=Math.min(1,1280/Math.max(sw,sh));
+    canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(sw*ratio));canvas.height=Math.max(1,Math.round(sh*ratio));
+    const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw Error('No se pudo crear la imagen.');ctx.drawImage(cameraVideo,0,0,canvas.width,canvas.height);
+    // Detener el vídeo antes de comprimir: no mantener cámara y codificador simultáneamente.
+    releaseCamera();setState('cameraStatus','Guardando foto en el teléfono…');
+    let blob=await encodeWebp(canvas,.82);
+    if(blob?.size>3*1024*1024)blob=await encodeWebp(canvas,.58);
+    if(!blob?.size||blob.type!=='image/webp'||blob.size>3*1024*1024)throw Error('No se pudo preparar una fotografía WebP válida.');
     canvas.width=1;canvas.height=1;canvas=null;
-    const name=(cameraTarget==='rut'||cameraTarget==='existingRut'?'rut':cameraTarget==='account'?'cuenta_cobro':'factura')+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webp';
-    const file=new File([blob],name,{type:'image/webp',lastModified:Date.now()});
-    const target=cameraTarget, expenseId=cameraExpenseId, docId=cameraDocumentId;
-    closeCamera();
-    if(target==='receipt'){
-      selectReceipt(file);
-      setState('saveStatus','✅ FACTURA lista ('+(blob.size/1024).toFixed(0)+' KB). Completa el gasto y pulsa Guardar.','ok');
-    }else if(target==='rut'){
-      assignCapturedFile('docRutFile',file);
-    }else if(target==='account'){
-      assignCapturedFile('docCuentaFile',file);
-    }else if(target==='existingExpense'){
-      await saveExpenseAttachment(file,expenseId);
-    }else if(target==='existingRut'){
-      await saveRutAttachment(file,docId);
-    }
-  }catch(error){
-    setState('cameraStatus','No se pudo preparar la foto: '+error.message+'. Puedes cerrar y usar «Elegir FACTURA».','error');
-    button.disabled=false;
-  }finally{
-    if(canvas){canvas.width=1;canvas.height=1;}
-  }
+    if(!uid||uid!==me?.id)throw Error('La sesión cambió.');
+    const file=new File([blob],CAMERA_NAMES[target].toLowerCase().replaceAll(' ','_')+'_'+Date.now()+'.webp',{type:'image/webp'});
+    if(target==='existingExpense')await saveExpenseAttachment(file,expenseId);
+    else if(target==='existingRut')await saveRutAttachment(file,docId);
+    else await putDraftFile(target,file);
+  }catch(e){setState('saveStatus','No se confirmó la captura: '+e.message+'. Intenta otra vez o usa la galería.','error');if(target.startsWith('existing'))setState('listStatus','No se confirmó el archivo: '+e.message,'error');}
+  finally{if(canvas){canvas.width=1;canvas.height=1;}closeCamera();cameraCapturing=false;attachmentBusy=false;$('cameraCancel').disabled=false;$('saveExpense').disabled=false;}
 }
 $('openCamera').addEventListener('click',()=>startCameraFor('receipt'));
 $('cameraRut').addEventListener('click',()=>startCameraFor('rut'));
 $('cameraCuenta').addEventListener('click',()=>startCameraFor('account'));
 $('cameraSnap').addEventListener('click',captureLightPhoto);
 $('cameraCancel').addEventListener('click',closeCamera);
-document.addEventListener('visibilitychange',()=>{if(document.hidden && cameraStream)closeCamera();});
-window.addEventListener('pagehide',closeCamera);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&!cameraCapturing&&(cameraStream||cameraOpening)){closeCamera();setState('saveStatus','Cámara pausada. El borrador guardado se conserva.','');}});
+window.addEventListener('pagehide',()=>{if(!cameraCapturing)closeCamera();});
 
 function imageLoad(file){return new Promise((resolve,reject)=>{const img=new Image(),src=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(src);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(src);reject(new Error('No se pudo abrir la fotografia.'))};img.src=src})}
-function encodeWebp(canvas,quality){return new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality))}
+function encodeWebp(canvas,quality){return new Promise((resolve,reject)=>{try{canvas.toBlob(b=>b?.size?resolve(b):reject(Error('No se pudo codificar la foto.')),'image/webp',quality);}catch(e){reject(e)}})}
 async function compressWebp(file){
-  // La foto capturada por la camara ligera ya esta comprimida: no volver a decodificarla.
-  if(file.type==='image/webp' && file.size>0 && file.size<=3*1024*1024)return file;
-  const img=await imageLoad(file);
-  let longest=1600;
-  for(let attempt=0;attempt<6;attempt++){
-    const scale=Math.min(1,longest/Math.max(img.naturalWidth,img.naturalHeight));
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
-    canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-    const ctx=canvas.getContext('2d',{alpha:false});
-    if(!ctx)throw Error('Memoria insuficiente para procesar esta imagen. Elige una foto de menor resolucion.');
-    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.imageSmoothingQuality='medium';ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    const blob=await encodeWebp(canvas,attempt<2?.85:.72);
-    canvas.width=1;canvas.height=1;
-    if(blob?.type==='image/webp'&&blob.size<=3*1024*1024)return blob;
-    longest=Math.max(600,Math.round(longest*.8));
-  }
-  throw Error('No fue posible preparar una foto WebP de maximo 3 MB. Intenta otra foto.');
+  // La cámara ya entrega un WebP pequeño. Para galería, reducir antes de la vista previa.
+  if(file.type==='image/webp'&&file.size>0&&file.size<=3*1024*1024&&/^(factura|rut|cuenta_de_cobro)_\d+\.webp$/.test(file.name||''))return file;
+  let image,canvas;
+  try{
+    if(typeof createImageBitmap==='function'){
+      try{image=await createImageBitmap(file);}catch(e){image=await imageLoad(file);}
+    }else image=await imageLoad(file);
+    const iw=image.width||image.naturalWidth,ih=image.height||image.naturalHeight;
+    if(!iw||!ih)throw Error('Fotografía sin dimensiones válidas.');
+    const scale=Math.min(1,1600/Math.max(iw,ih));canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(iw*scale));canvas.height=Math.max(1,Math.round(ih*scale));
+    const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw Error('No se pudo procesar la foto.');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);
+    if(image.close){image.close();image=null;}
+    let blob=await encodeWebp(canvas,.82);if(blob.size>3*1024*1024)blob=await encodeWebp(canvas,.55);
+    if(blob.type!=='image/webp'||blob.size>3*1024*1024)throw Error('No se pudo obtener un WebP de máximo 3 MB.');return blob;
+  }finally{if(image?.close)image.close();if(canvas){canvas.width=1;canvas.height=1;}}
 }
 async function confirmOwner(){
-  if(!window.GFOffline || window.GFOffline.version !== '6.0.0' ||
-     typeof window.GFOffline.enqueueExpenseBundle !== 'function'){
-    throw Error('No cargó la versión V6 del módulo de sincronización. Abre GastoFolio con internet y actualiza la página. NO borres los datos del sitio ni los registros pendientes.');
+  if(!window.GFOffline || window.GFOffline.version !== '12.0.0' ||
+     typeof window.GFOffline.enqueueExpenseBundle !== 'function'||typeof window.GFOffline.getDraft !== 'function'){
+    throw Error('No cargó el módulo de sincronización V12. Abre GastoFolio con internet y actualiza la página. NO borres los datos del sitio ni los registros pendientes.');
   }
   let user;
   if(navigator.onLine){
@@ -356,10 +340,11 @@ async function confirmOwner(){
     user=session.user;
   }
   me=user;
+  GFOffline.attach({db,getUser:()=>me,compress:compressWebp,update:()=>refresh(),setState});
+  try{await restoreDraft();}catch(e){me=null;draftReady=false;throw Error('No se pudo abrir el almacenamiento local: '+e.message+'. No borres los datos del sitio.');}
   $('loginArea').classList.add('hidden');
   $('appHeader').classList.remove('hidden');
   $('gastosApp').classList.remove('hidden');
-  GFOffline.attach({db,getUser:()=>me,compress:compressWebp,update:()=>refresh(),setState});
   await refresh();
   await refreshDocs();
   await GFOffline.displayQueue();
@@ -412,42 +397,43 @@ async function refresh(){
 }
 
 $('expenseForm').addEventListener('submit',async event=>{
- event.preventDefault();if(busy)return;
+ event.preventDefault();if(busy||attachmentBusy||cameraOpening||cameraCapturing||cameraStream||pdfBusy||!draftReady)return;
  const value=Number($('valor').value);
  if(!Number.isSafeInteger(value)||value<=0){setState('saveStatus','Escribe un valor entero positivo en pesos colombianos.','error');return}
  if(!me){setState('saveStatus','No hay sesión previamente verificada.','error');return}
- busy=true;$('saveExpense').disabled=true;
+ busy=true;$('saveExpense').disabled=true;$('expenseForm').inert=true;
  try{
    const expenseId=crypto.randomUUID();
    const establishment=$('docEstablecimiento').value.trim();
    const nit=$('docNit').value.trim()||null;
    const docNote=$('docNota').value.trim()||null;
-   const rut=$('docRutFile').files[0]||null;
-   const account=$('docCuentaFile').files[0]||null;
+   await draftWrite.catch(()=>{});
+   const rut=draftFiles.rut;
+   const account=draftFiles.account;
    const pending=$('docRutPendiente').checked;
    if((rut||account||pending)&&!establishment)throw Error('Para guardar un RUT o una cuenta de cobro, escribe el nombre del establecimiento.');
    setState('saveStatus','Preparando el gasto y sus documentos…');
-   const preparedReceipt=receiptFile?await GFOffline.prepareDocument(receiptFile,compressWebp):null;
+   const preparedReceipt=draftFiles.receipt;
    const docItems=[];
    if(rut||pending){
      docItems.push({payload:{id:crypto.randomUUID(),tipo:'rut',establecimiento:establishment,nit,nota:docNote,gasto_id:expenseId},
-       prepared:rut?await GFOffline.prepareDocument(rut,compressWebp):null});
+       prepared:rut||null});
    }
    if(account){
      docItems.push({payload:{id:crypto.randomUUID(),tipo:'cuenta_cobro',establecimiento:establishment,nit,nota:docNote,gasto_id:expenseId},
-       prepared:await GFOffline.prepareDocument(account,compressWebp)});
+       prepared:account});
    }
    // La operación siempre se conserva primero EN BLOQUE en IndexedDB.
    // Con internet, esperamos la subida antes de anunciar éxito remoto.
    // Sin internet o si falla la red, conservamos todos los archivos para reintento.
    if(typeof window.GFOffline?.enqueueExpenseBundle !== 'function')
-     throw Error('Falta el módulo V6. No se guardó el gasto: recarga la página con internet, sin borrar datos del navegador.');
+     throw Error('Falta el módulo V12. No se guardó el gasto: recarga la página con internet, sin borrar datos del navegador.');
    const jobs=await GFOffline.enqueueExpenseBundle(
      {id:expenseId,categoria:$('categoria').value,valor_cop:value,nota:$('nota').value.trim()||null,fecha_gasto:new Date().toISOString()},
-     preparedReceipt,docItems
+     preparedReceipt,docItems,true
    );
    // Solo limpiar el formulario cuando IndexedDB confirmó los archivos completos.
-   $('expenseForm').reset();clearSelectedReceipt();
+   resetDraftUi();
    if(navigator.onLine){
      setState('saveStatus','⏳ Gasto y documentos protegidos en el teléfono. Confirmando subida a Supabase…');
      await GFOffline.sync(true);
@@ -462,10 +448,10 @@ $('expenseForm').addEventListener('submit',async event=>{
      setState('saveStatus','✅ Guardado sin internet en este teléfono, con todos los archivos. Se sincronizará cuando haya conexión y abras la aplicación.','ok');
    }
  }catch(e){setState('saveStatus','NO se guardó el registro: '+e.message+'. Conserva los documentos originales y vuelve a intentar.','error')}
- finally{busy=false;$('saveExpense').disabled=false}
+ finally{busy=false;$('expenseForm').inert=false;$('saveExpense').disabled=false}
 });
 $('expensesList').addEventListener('click',async event=>{
- const button=event.target.closest('button[data-action]');if(!button)return;
+ const button=event.target.closest('button[data-action]');if(!button||pdfBusy||attachmentBusy||busy)return;
  const expense=entries.find(x=>x.id===button.dataset.id);if(!expense)return;
  button.disabled=true;
  try{
@@ -514,7 +500,7 @@ $('expensesList').addEventListener('click',async event=>{
 });
 async function saveExpenseAttachment(file,expenseId){
  const expense=entries.find(x=>x.id===expenseId);
- if(!file||!expense)throw Error('No se encontró el gasto al que quieres adjuntar la foto.');
+ if(!file||!expense||pdfBusy)throw Error('No se encontró el gasto o hay una exportación en curso.');
  try{
    const prepared=await GFOffline.prepareDocument(file,compressWebp);
    await GFOffline.enqueueAttach(expense.id,prepared);
@@ -546,29 +532,17 @@ function loadJsPDF(){
 }
 function pdfCategory(c){return ({comida:'Comida',combustible:'Combustible',peajes:'Peajes',calibracion_llantas:'Calibración de llantas',agua:'Agua',otros:'Otros'})[c]||c}
 async function receiptJpeg(blob){
-  // Se convierte la foto privada WebP a JPEG para compatibilidad con lectores PDF.
-  const objectUrl=URL.createObjectURL(blob);
+  if(!blob?.size)throw Error('Fotografía vacía.');
+  let img,canvas;
   try{
-    const img=await new Promise((resolve,reject)=>{
-      const el=new Image();
-      el.onload=()=>resolve(el);
-      el.onerror=()=>reject(Error('El archivo de foto no se pudo interpretar.'));
-      el.src=objectUrl;
-    });
-    // Mantener suficiente detalle para poder leer el texto de los recibos.
-    const maxSide=2400;
-    const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
-    const w=Math.max(1,Math.round(img.naturalWidth*scale));
-    const h=Math.max(1,Math.round(img.naturalHeight*scale));
-    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
-    const ctx=canvas.getContext('2d');
-    if(!ctx)throw Error('No se pudo procesar la imagen en este dispositivo.');
-    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);
-    ctx.drawImage(img,0,0,w,h);
-    const data=canvas.toDataURL('image/jpeg',0.88);
-    canvas.width=1;canvas.height=1;
-    return {data,w,h};
-  }finally{URL.revokeObjectURL(objectUrl)}
+    img=await imageLoad(blob);const scale=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
+    const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
+    canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw Error('No se pudo procesar la imagen.');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);img.src='';img=null;
+    const jpeg=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?.size&&b.type==='image/jpeg'?resolve(b):reject(Error('No se pudo convertir la fotografía a JPEG.')),'image/jpeg',.87));
+    return {data:new Uint8Array(await jpeg.arrayBuffer()),w,h};
+  }finally{if(img)img.src='';if(canvas){canvas.width=1;canvas.height=1;}}
 }
 function addExpensePdfPage(doc,g,i,total,image,isAttachedPdf=false){
   // Hoja A4 blanca, sin marca, nombre del programa, logo ni fondos de color.
@@ -661,16 +635,33 @@ async function appendPhotoDocument(target,JsPDF,entry,blob){
   await copyPdfPages(target,sheet.output('arraybuffer'),'fotografía de '+entry.tipo);
 }
 async function exportPdf(rows,button){
- if(!rows.length){setState('listStatus','No hay gastos para exportar a PDF.','error');return}
- if(rows.length>40){setState('listStatus','Para que el celular no se sobrecargue, exporta máximo 40 gastos por PDF. Filtra por mes o categoría.','error');return}
- if(button)button.disabled=true;
+ const bulk=button===$('exportPdf'), category=$('filterCategoria').value,month=$('filterMes').value;
+ if(!bulk&&!rows.length){setState('listStatus','No hay gastos para exportar a PDF.','error');return}
+ if(pdfBusy||busy||attachmentBusy||cameraOpening||cameraStream||cameraCapturing)return;
+ pdfBusy=true;if(button)button.disabled=true;
  try{
    if(!navigator.onLine)throw Error('Conéctate a internet para descargar el PDF completo con el RUT y la factura. Los gastos sin sincronizar permanecerán guardados en el teléfono.');
    // Reintentar la cola antes de exportar y no crear un informe incompleto.
    await GFOffline.sync(true);
    const pending=await GFOffline.getPendingForExpenseIds(rows.map(g=>g.id));
    if(pending.length)throw Error('Hay '+pending.length+' archivos de estos gastos sin sincronizar. Pulsa Sincronizar ahora y vuelve a exportar.');
+   // La lista recibida al pulsar PDF puede estar desactualizada después de sync.
+   if(bulk&&await GFOffline.pendingCount())throw Error('Existen registros o documentos pendientes de sincronizar. No se puede garantizar un informe completo.');
+   const originalIds=rows.map(g=>g.id);
+   let query=db.from('gastofolio_gastos').select('id,categoria,valor_cop,nota,registrado_en,fecha_gasto,expira_en,comprobante_ruta,comprobante_tipo,anulado').eq('creado_por',me.id);
+   if(bulk){if(category)query=query.eq('categoria',category);query=query.order('registrado_en',{ascending:false}).limit(1000);}else query=query.in('id',originalIds);
+   const {data:fresh,error:readError}=await query;
+   if(readError)throw Error('No se pudo verificar el historial actual: '+readError.message);
+   const byId=new Map((fresh||[]).map(g=>[g.id,g]));
+   if(bulk){if((fresh||[]).length>=1000)throw Error('Demasiados registros para garantizar el informe completo.');rows=(fresh||[]).filter(g=>!month||monthBogota(g.fecha_gasto)===month);}
+   else{if(originalIds.some(id=>!byId.has(id)))throw Error('Un gasto cambió o fue eliminado. Actualiza el historial antes de exportar.');rows=originalIds.map(id=>byId.get(id));}
+   if(!rows.length)throw Error('No hay gastos para exportar con los filtros seleccionados.');
+   if(rows.length>40)throw Error('Exporta máximo 40 gastos por PDF. Filtra por mes o categoría.');
+   const ids=rows.map(g=>g.id);
    await refreshDocs(true);
+   const linkedIds=docs.filter(d=>ids.includes(d.gasto_id)).map(d=>d.id);
+   const stillPending=await GFOffline.getPendingForExpenseIds(ids,linkedIds);
+   if(stillPending.length)throw Error('Todavía hay archivos pendientes. No se generó un PDF incompleto.');
    const JsPDF=await loadJsPDF();
    await loadPdfLib();
    const combined=await window.PDFLib.PDFDocument.create();
@@ -678,10 +669,12 @@ async function exportPdf(rows,button){
      const g=rows[i];
      setState('listStatus','Preparando gasto '+(i+1)+' de '+rows.length+' y sus documentos…');
      let receipt=null,photo=null;
+     if(g.comprobante_tipo&&!g.comprobante_ruta)throw Error('El gasto tiene un comprobante sin ruta asociada.');
      const receiptPdf=g.comprobante_tipo==='application/pdf'||/\.pdf$/i.test(g.comprobante_ruta||'');
      if(g.comprobante_ruta){
        const {data,error}=await db.storage.from('gastofolio-recibos').download(g.comprobante_ruta);
        if(error)throw Error('No se pudo descargar el comprobante del gasto '+g.id+': '+error.message);
+       if(!(data instanceof Blob)||!data.size)throw Error('El comprobante descargado está vacío.');
        receipt=data;
        if(!receiptPdf)photo=await receiptJpeg(receipt);
      }
@@ -692,13 +685,15 @@ async function exportPdf(rows,button){
      if(receiptPdf&&receipt)await copyPdfPages(combined,await receipt.arrayBuffer(),'factura de gasto '+g.id,'FACTURA');
      const linked=docs.filter(x=>x.gasto_id===g.id);
      for(const d of linked){
-       if(!d.archivo_ruta)continue; // Pendiente: queda listado en el historial, no inventar hoja.
+       if(!d.archivo_ruta){if(d.estado==='recibido')throw Error('Un documento recibido no tiene archivo asociado.');continue;}
        const {data,error}=await db.storage.from('gastofolio-documentos').download(d.archivo_ruta);
        if(error)throw Error('No se pudo obtener el '+(docNames[d.tipo]||d.tipo)+' de '+d.establecimiento+': '+error.message);
+       if(!(data instanceof Blob)||!data.size)throw Error('Documento descargado vacío.');
        if(d.archivo_tipo==='application/pdf'||/\.pdf$/i.test(d.archivo_ruta))
          await copyPdfPages(combined,await data.arrayBuffer(),(docNames[d.tipo]||'documento')+' de '+d.establecimiento,docNames[d.tipo]||'DOCUMENTO');
        else await appendPhotoDocument(combined,JsPDF,d,data);
      }
+     if(combined.getPageCount()>220)throw Error('El documento tiene demasiadas hojas. Exporta menos gastos.');
    }
    if(combined.getPageCount()>220)throw Error('El documento tiene demasiadas hojas. Exporta menos gastos.');
    const bytes=await combined.save();
@@ -707,7 +702,7 @@ async function exportPdf(rows,button){
    setState('listStatus','✅ PDF descargado con '+combined.getPageCount()+' página(s). Las hojas están identificadas como FACTURA, RUT o CUENTA DE COBRO. Revisa la descarga antes de borrar originales.','ok');
  }catch(e){
    setState('listStatus','No se pudo completar el PDF: '+e.message+'. Todos los archivos originales permanecen intactos.','error');
- }finally{if(button)button.disabled=false}
+ }finally{pdfBusy=false;if(button)button.disabled=false}
 }
 $('exportPdf').onclick=()=>exportPdf(filtered(),$('exportPdf'));
 
@@ -745,12 +740,12 @@ async function refreshDocs(strict=false){
   }
 }
 async function saveRutAttachment(file,docId){
- if(!file||!docId)throw Error('No se encontró el RUT pendiente.');
+ if(!file||!docId||pdfBusy)throw Error('No se encontró el RUT pendiente o hay una exportación en curso.');
  try{
    const prepared=await GFOffline.prepareDocument(file,compressWebp);
    await GFOffline.enqueueDocFile(docId,prepared);
    setState('listStatus','RUT guardado en este teléfono; sincronizando cuando haya conexión.','ok');
-   if(navigator.onLine){await GFOffline.sync(true);await refreshDocs();}
+   if(navigator.onLine)GFOffline.sync(true).catch(e=>console.warn('RUT pendiente',e));
  }catch(e){setState('listStatus','No se guardó el RUT: '+e.message,'error');throw e;}
 }
 $('attachDocFile').addEventListener('change',async ev=>{
@@ -760,10 +755,10 @@ $('attachDocFile').addEventListener('change',async ev=>{
 });
 $('syncNow').onclick=()=>GFOffline.sync(true);
 // La aplicación se sincroniza al volver internet o recuperar el foco.
-window.addEventListener('online',()=>GFOffline.sync());
+window.addEventListener('online',()=>{if(!cameraOpening&&!cameraStream&&!cameraCapturing&&!attachmentBusy&&!pdfBusy)GFOffline.sync();});
 window.addEventListener('offline',()=>GFOffline.paintNetwork());
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me){GFOffline.paintNetwork();GFOffline.sync()}});
-setInterval(()=>{if(me&&navigator.onLine&&!document.hidden)GFOffline.sync()},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me){GFOffline.paintNetwork();if(!cameraOpening&&!cameraStream&&!cameraCapturing&&!attachmentBusy&&!pdfBusy)GFOffline.sync()}});
+setInterval(()=>{if(me&&navigator.onLine&&!document.hidden&&!cameraOpening&&!cameraStream&&!cameraCapturing&&!attachmentBusy&&!pdfBusy)GFOffline.sync()},60000);
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(e=>console.warn('SW no instalado',e)))}
 
 // Instalación opcional PWA. No solicita ni genera un APK nativo.
@@ -806,9 +801,10 @@ $('loginForm').addEventListener('submit',async(e)=>{
  finally{button.disabled=false}
 });
 $('exitButton').addEventListener('click',async()=>{
+ if(busy||attachmentBusy||pdfBusy||cameraCapturing)return;await draftWrite.catch(()=>{});draftReady=false;
  localStorage.removeItem('gf_last_verified_owner');
  await db.auth.signOut({scope:'local'});
- closeCamera();me=null; entries=[];docs=[];clearSelectedReceipt();
+ closeCamera();me=null; entries=[];docs=[];resetDraftUi();
  $('pendingList').replaceChildren();
  $('appHeader').classList.add('hidden');
  $('gastosApp').classList.add('hidden');
