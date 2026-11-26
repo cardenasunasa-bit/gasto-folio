@@ -76,7 +76,7 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
     <div id="pendingList"></div>
     <div class="row"><button type="button" id="syncNow" class="secondary">🔄 Sincronizar ahora</button></div>
   </section>
-  <div class="card"><div class="grid"><div class="sum"><small>Total activo mostrado</small><strong id="sumTotal">$0</strong></div><div class="sum"><small>Comprobantes adjuntos</small><strong id="sumPhotos">0</strong></div><div class="sum"><small>Registros mostrados</small><strong id="sumCount">0</strong></div></div><p class="muted">Los gastos tienen un vencimiento de dos meses desde su registro. La eliminación automática aún NO está activada. Los RUT y las cuentas de cobro se guardan aparte, sin borrado automático. Sin conexión puedes registrar gastos y documentos; se sincronizan cuando vuelvas a conectarte y abras la aplicación.</p></div>
+  <div class="card"><div class="grid"><div class="sum"><small>Total activo mostrado</small><strong id="sumTotal">$0</strong></div><div class="sum"><small>Comprobantes adjuntos</small><strong id="sumPhotos">0</strong></div><div class="sum"><small>Registros mostrados</small><strong id="sumCount">0</strong></div></div><p class="muted">Los gastos tienen un vencimiento de dos meses desde su registro. La eliminación automática aún NO está activada. Los RUT y las cuentas de cobro se conservan en almacenamiento privado, sin borrado automático. Sin conexión puedes registrar gastos y documentos; se sincronizan cuando vuelvas a conectarte y abras la aplicación.</p></div>
   <section class="card">
     <h2>➕ Registrar nuevo gasto</h2>
     <p class="muted">Todo en una sola operación: categoría, valor, observación, foto de la factura y RUT o cuenta de cobro del establecimiento. También funciona sin internet.</p>
@@ -122,20 +122,13 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
         </div>
         <label for="docNota">Observación sobre los documentos (opcional)</label>
         <textarea id="docNota" maxlength="500" placeholder="Ej. Solicitar el RUT en la siguiente visita"></textarea>
-        <p class="form-tip">Los PDF admiten hasta 10 MB por archivo. Las fotos se comprimen. Si falta el RUT, lo podrás adjuntar después desde el historial de documentos.</p>
+        <p class="form-tip">Los PDF admiten hasta 10 MB por archivo. Las fotos se comprimen. Si falta el RUT, podrás adjuntarlo después desde el botón del gasto correspondiente en el historial.</p>
       </div>
       <div class="row" style="margin-top:14px"><button id="saveExpense" type="submit">💾 Guardar gasto, recibo y documentos</button></div>
     </form>
     <div id="saveStatus" class="status" aria-live="polite">Con internet se confirma la sincronización en Supabase. Sin conexión, el gasto y sus archivos se conservan juntos en este teléfono hasta poder enviarlos.</div>
   </section>
   <section class="card"><h2>📂 Historial por categorías</h2><div class="filters"><div><label for="filterCategoria">Categoría</label><select id="filterCategoria"><option value="">Todas las categorías</option><option value="comida">Comida</option><option value="combustible">Combustible</option><option value="peajes">Peajes</option><option value="calibracion_llantas">Calibración de llantas</option><option value="agua">Agua</option><option value="otros">Otros</option></select></div><div><label for="filterMes">Mes (opcional)</label><input type="month" id="filterMes"></div></div><div class="row" style="margin-top:13px"><button type="button" id="refreshExpenses" class="secondary">Actualizar</button><button type="button" id="exportPdf">📄 Descargar PDF completo (gasto + RUT)</button><button type="button" id="exportCsv" class="secondary">Descargar informe CSV</button><button type="button" id="exportZip" class="secondary">Descargar gastos + fotos (ZIP)</button></div><p class="muted">Cada gasto ocupa su primera hoja con el valor, la fecha, la observación y la foto del recibo. Después vienen las hojas del RUT y la cuenta de cobro vinculados. Con una foto del recibo y un RUT de una sola página, el resultado tendrá 2 hojas. Si un PDF original tiene varias, se conservan todas. Descarga el informe después de sincronizar.</p><div id="listStatus" class="status" aria-live="polite">Consultando registros…</div><div class="expenses" id="expensesList"></div></section>
-<section class="card" id="documentsSection">
-  <h2>📁 RUT y cuentas de cobro registrados</h2>
-  <p class="muted">Los documentos nuevos se adjuntan arriba, mientras registras el gasto. Aquí puedes consultar los documentos ya guardados y subir el RUT de un establecimiento que quedó pendiente.</p>
-  <div class="row"><button type="button" id="refreshDocs" class="secondary">Actualizar documentos</button></div>
-  <div id="docListStatus" class="status">Consultando documentos...</div>
-  <div id="docsList" class="docgrid"></div>
-</section>
 </section>
 <section id="previewModal" class="card hidden preview" aria-label="Vista previa del comprobante"><div class="row"><button id="closePreview" type="button" class="secondary">Cerrar foto</button><a id="downloadPreview" class="btn" download="comprobante.webp">Descargar foto</a></div><img id="previewImage" alt="Foto del comprobante"></section>
 <input id="attachPhoto" type="file" accept="application/pdf,.pdf,image/*" class="hidden" aria-label="Adjuntar PDF o fotografía a un gasto existente">
@@ -232,6 +225,7 @@ function render(){
      '<div class="meta">📅 '+html(dt(x.fecha_gasto))+'</div><div class="meta">Vence: '+html(dt(x.expira_en))+'</div>'+ 
      '<div class="row"><button type="button" class="secondary" data-action="'+(hasFile?'view':'attach')+'" data-id="'+html(x.id)+'">'+(hasFile?(isPdf?'📄 Descargar PDF':'📷 Ver foto'):'📎 Adjuntar PDF o foto')+'</button>'+ 
      '<button type="button" class="secondary" data-action="pdf" data-id="'+html(x.id)+'">📃 Gasto + documentos PDF</button>'+ 
+     (docs.some(d=>d.gasto_id===x.id&&d.tipo==='rut'&&!d.archivo_ruta)?'<button type="button" class="secondary" data-action="attach-rut" data-id="'+html(x.id)+'">📎 Adjuntar RUT pendiente</button>':'')+
      '<button type="button" class="danger" data-action="delete" data-id="'+html(x.id)+'">🗑️ Eliminar definitivamente</button></div>';
    target.appendChild(item);
  }
@@ -316,7 +310,12 @@ $('expensesList').addEventListener('click',async event=>{
  const expense=entries.find(x=>x.id===button.dataset.id);if(!expense)return;
  button.disabled=true;
  try{
-   if(button.dataset.action==='attach'){
+   if(button.dataset.action==='attach-rut'){
+     const pendingRut=docs.find(d=>d.gasto_id===expense.id&&d.tipo==='rut'&&!d.archivo_ruta);
+     if(!pendingRut)throw Error('No hay un RUT pendiente para este gasto.');
+     GFOffline.documentToAttach=pendingRut.id;
+     $('attachDocFile').click();
+   }else if(button.dataset.action==='attach'){
      attachExpenseId=expense.id;$('attachPhoto').click();
    }else if(button.dataset.action==='view'){
      if(!navigator.onLine)throw Error('La descarga de un comprobante sincronizado necesita internet.');
@@ -325,7 +324,7 @@ $('expensesList').addEventListener('click',async event=>{
      if(error)throw error;
      const isPdf=expense.comprobante_tipo==='application/pdf'||/\.pdf$/i.test(expense.comprobante_ruta||'');
      if(isPdf){
-       saveBlob(data,'GastoFolio_recibo_'+expense.id.slice(0,8)+'.pdf');
+       saveBlob(data,'recibo_'+expense.id.slice(0,8)+'.pdf');
        setState('listStatus','✅ PDF original descargado.','ok');
      }else{
        if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);
@@ -402,50 +401,44 @@ async function receiptJpeg(blob){
   }finally{URL.revokeObjectURL(objectUrl)}
 }
 function addExpensePdfPage(doc,g,i,total,image,isAttachedPdf=false){
-  const pageW=210,pageH=297,margin=15;
-  doc.setFillColor(9,101,78);doc.rect(0,0,pageW,10,'F');
-  doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(20,42,72);
-  doc.text('GastoFolio | Comprobante de gasto',margin,21);
-  doc.setTextColor(92,111,138);doc.setFont('helvetica','normal');doc.setFontSize(9);
-  doc.text('Archivo personal - los documentos asociados siguen en hojas adicionales',margin,27);
-  doc.setDrawColor(203,213,227);doc.line(margin,31,pageW-margin,31);
-  doc.setFontSize(10);doc.setTextColor(20,42,72);
-  doc.setFont('helvetica','bold');doc.text('Categoría:',margin,39);
-  doc.setFont('helvetica','normal');doc.text(pdfCategory(g.categoria),37,39);
-  doc.setFont('helvetica','bold');doc.text('Valor:',margin,46);
-  doc.setFont('helvetica','normal');doc.text(cop(g.valor_cop).replace(/\u00a0/g,' '),28,46);
-  doc.setFont('helvetica','bold');doc.text('Fecha del gasto:',margin,53);
-  doc.setFont('helvetica','normal');doc.text(dateForExport(g.fecha_gasto),49,53);
-  doc.setFont('helvetica','bold');doc.text('Registrado:',margin,60);
-  doc.setFont('helvetica','normal');doc.text(dateForExport(g.registrado_en),38,60);
-  doc.setFont('helvetica','bold');doc.text('Estado:',111,60);
-  doc.setFont('helvetica','normal');doc.text(g.anulado?'Anulado':'Activo',126,60);
-  doc.setFont('helvetica','bold');doc.text('Observaciones:',margin,69);
-  doc.setFont('helvetica','normal');doc.setFontSize(9);
-  const note=String(g.nota||'Sin observaciones').replace(/\s+/g,' ').trim();
-  const lines=doc.splitTextToSize(note,pageW-margin*2);
-  const noteY=75;const lineH=4.15;
-  doc.text(lines,margin,noteY,{lineHeightFactor:1.22});
-  const imgTop=Math.max(87,noteY+lines.length*lineH+9);
-  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(71,91,113);
-  doc.text(isAttachedPdf?'FACTURA ORIGINAL PDF - ANEXO SIGUIENTE':'FOTOGRAFÍA DEL COMPROBANTE',margin,imgTop-3);
-  const areaTop=imgTop+1,areaBottom=278;
-  if(image){
-    const areaW=pageW-margin*2, areaH=areaBottom-areaTop;
-    if(areaH<20)throw Error('Las observaciones ocupan demasiado espacio en la hoja.');
-    const ratio=Math.min(areaW/image.w,areaH/image.h);
-    const iw=image.w*ratio,ih=image.h*ratio;
-    const x=(pageW-iw)/2,y=areaTop+(areaH-ih)/2;
-    doc.addImage(image.data,'JPEG',x,y,iw,ih,undefined,'MEDIUM');
-  }else{
-    doc.setDrawColor(207,218,229);doc.roundedRect(margin,areaTop,pageW-margin*2,Math.min(45,areaBottom-areaTop),3,3);
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(107,120,140);
-    doc.text(isAttachedPdf?'La factura PDF original aparece en la siguiente hoja.':'Este gasto no tiene fotografía adjunta.',pageW/2,areaTop+24,{align:'center'});
+  // Hoja A4 blanca, sin marca, nombre del programa, logo ni fondos de color.
+  const pageW=210, margin=17;
+  doc.setTextColor(28,28,28);
+  doc.setFont('helvetica','bold');doc.setFontSize(13);
+  doc.text('COMPROBANTE DE GASTO',margin,22);
+  doc.setDrawColor(215,215,215);doc.line(margin,27,pageW-margin,27);
+  const fields=[
+    ['Categoría',pdfCategory(g.categoria)],
+    ['Valor',cop(g.valor_cop).replace(/\u00a0/g,' ')],
+    ['Fecha y hora',dateForExport(g.fecha_gasto)],
+    ['Fecha de registro',dateForExport(g.registrado_en)]
+  ];
+  let y=36;
+  for(const [label,value] of fields){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(35,35,35);
+    doc.text(label+':',margin,y);
+    doc.setFont('helvetica','normal');doc.text(String(value??''),margin+40,y);
+    y+=8;
   }
-  doc.setDrawColor(203,213,227);doc.line(margin,283,pageW-margin,283);
-  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(101,117,139);
-  doc.text('Hora de Colombia | Identificador: '+g.id,margin,289);
-  doc.text('Página '+(i+1)+' de '+total,pageW-margin,289,{align:'right'});
+  doc.setFont('helvetica','bold');doc.text('Observación:',margin,y+2);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  const note=String(g.nota||'Sin observaciones').replace(/\s+/g,' ').trim();
+  const noteLines=doc.splitTextToSize(note,pageW-margin*2).slice(0,10);
+  doc.text(noteLines,margin,y+10,{lineHeightFactor:1.22});
+  const top=Math.max(107,y+12+noteLines.length*5);
+  doc.setDrawColor(221,221,221);doc.line(margin,top-10,pageW-margin,top-10);
+  doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(50,50,50);
+  doc.text(isAttachedPdf?'COMPROBANTE ORIGINAL EN LAS HOJAS SIGUIENTES':'COMPROBANTE ADJUNTO',margin,top-4);
+  if(image){
+    const areaW=pageW-2*margin,areaH=277-top;
+    if(areaH<20)throw Error('La observación ocupa demasiado espacio para mostrar el recibo.');
+    const ratio=Math.min(areaW/image.w,areaH/image.h);
+    const w=image.w*ratio,h=image.h*ratio;
+    doc.addImage(image.data,'JPEG',(pageW-w)/2,top+(areaH-h)/2,w,h,undefined,'MEDIUM');
+  }else{
+    doc.setFont('helvetica','normal');doc.setTextColor(115,115,115);doc.setFontSize(10);
+    doc.text(isAttachedPdf?'El comprobante PDF original se adjunta a continuación.':'Sin comprobante fotográfico.',margin,top+16);
+  }
 }
 let pdfLibPromise=null;
 function loadPdfLib(){
@@ -472,19 +465,17 @@ async function copyPdfPages(target, sourceBytes, context){
  copied.forEach(page=>target.addPage(page));
 }
 async function appendPhotoDocument(target,JsPDF,entry,blob){
- const image=await receiptJpeg(blob);
- const sheet=new JsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
- sheet.setFillColor(9,101,78);sheet.rect(0,0,210,10,'F');
- sheet.setFont('helvetica','bold');sheet.setFontSize(17);sheet.setTextColor(20,60,45);
- sheet.text('Documento adjunto: '+(docNames[entry.tipo]||entry.tipo),15,23);
- sheet.setFont('helvetica','normal');sheet.setFontSize(10);
- sheet.text('Establecimiento: '+entry.establecimiento.slice(0,90),15,32);
- sheet.text('NIT: '+(entry.nit||'No registrado'),15,39);
- if(entry.nota){sheet.setFontSize(9);sheet.text(sheet.splitTextToSize(entry.nota,178).slice(0,3),15,46)}
- const maxW=180,maxH=213,top=58;
- const ratio=Math.min(maxW/image.w,maxH/image.h),w=image.w*ratio,h=image.h*ratio;
- sheet.addImage(image.data,'JPEG',(210-w)/2,top+(maxH-h)/2,w,h,undefined,'MEDIUM');
- await copyPdfPages(target,sheet.output('arraybuffer'),'fotografía de '+entry.tipo);
+  // Documento en página blanca sin datos o marca adicionales impresos encima.
+  const image=await receiptJpeg(blob);
+  const sheet=new JsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+  sheet.setTextColor(30,30,30);sheet.setFont('helvetica','bold');sheet.setFontSize(12);
+  sheet.text((docNames[entry.tipo]||'DOCUMENTO ADJUNTO').toUpperCase(),15,19);
+  sheet.setFont('helvetica','normal');sheet.setFontSize(9);
+  sheet.text('Fecha y hora: '+dateForExport(entry.registrado_en),15,26);
+  const maxW=180,maxH=250,top=35;
+  const ratio=Math.min(maxW/image.w,maxH/image.h),w=image.w*ratio,h=image.h*ratio;
+  sheet.addImage(image.data,'JPEG',(210-w)/2,top+(maxH-h)/2,w,h,undefined,'MEDIUM');
+  await copyPdfPages(target,sheet.output('arraybuffer'),'fotografía de '+entry.tipo);
 }
 async function exportPdf(rows,button){
  if(!rows.length){setState('listStatus','No hay gastos para exportar a PDF.','error');return}
@@ -496,7 +487,7 @@ async function exportPdf(rows,button){
    await GFOffline.sync(true);
    const pending=await GFOffline.getPendingForExpenseIds(rows.map(g=>g.id));
    if(pending.length)throw Error('Hay '+pending.length+' archivos de estos gastos sin sincronizar. Pulsa Sincronizar ahora y vuelve a exportar.');
-   await refreshDocs();
+   await refreshDocs(true);
    const JsPDF=await loadJsPDF();
    await loadPdfLib();
    const combined=await window.PDFLib.PDFDocument.create();
@@ -528,7 +519,7 @@ async function exportPdf(rows,button){
    }
    if(combined.getPageCount()>220)throw Error('El documento tiene demasiadas hojas. Exporta menos gastos.');
    const bytes=await combined.save();
-   const filename='GastoFolio_gastos_con_documentos_'+new Date().toISOString().slice(0,10)+(rows.length===1?'_'+rows[0].id.slice(0,8):'')+'.pdf';
+   const filename='comprobantes_y_documentos_'+new Date().toISOString().slice(0,10)+(rows.length===1?'_'+rows[0].id.slice(0,8):'')+'.pdf';
    saveBlob(new Blob([bytes],{type:'application/pdf'}),filename);
    setState('listStatus','✅ PDF descargado con '+combined.getPageCount()+' página(s): fichas, comprobantes y RUT/cuentas de cobro recibidos. Revisa la descarga antes de borrar originales.','ok');
  }catch(e){
@@ -548,56 +539,38 @@ $('exportZip').onclick=async()=>{const arr=filtered();if(!arr.length){setState('
 // Documentos privados (RUT, cuentas de cobro y otros).
 let docs=[];
 const docNames={rut:'RUT',cuenta_cobro:'Cuenta de cobro',otro:'Otro documento'};
-function renderDocs(){
- const target=$('docsList');target.innerHTML='';
- for(const d of docs){
-   const article=document.createElement('article');article.className='doc-card';
-   article.innerHTML='<div class="expense-top"><span class="pill">'+html(docNames[d.tipo]||d.tipo)+'</span><span class="muted">'+(d.archivo_ruta?'✅ Recibido':'⏳ Pendiente')+'</span></div>'+
-    '<h3 style="margin:12px 0 5px">'+html(d.establecimiento)+'</h3><div class="muted">'+html(d.nit?'NIT: '+d.nit:'Sin NIT')+'</div>'+
-    '<p class="note">'+html(d.nota||'Sin observaciones')+'</p><div class="muted">'+(d.gasto_id?'🔗 Vinculado al gasto '+html(d.gasto_id.slice(0,8)):'Sin gasto asociado')+'</div><div class="muted">📅 '+html(dt(d.registrado_en))+'</div>'+
-    '<button class="secondary" type="button" data-doc-id="'+html(d.id)+'">'+(d.archivo_ruta?'📄 Descargar documento':'📎 Adjuntar PDF o foto')+'</button>';
-   target.appendChild(article);
- }
- setState('docListStatus',docs.length+' documentos encontrados. Los pendientes sin archivo aparecen arriba.');
+async function refreshDocs(strict=false){
+  if(!me)return;
+  try{
+    if(!navigator.onLine){
+      if(strict)throw Error('Se necesita internet para consultar los documentos vinculados antes de exportar.');
+      docs=await GFOffline.getCachedDocs(me.id);render();return;
+    }
+    const {data,error}=await db.from('gastofolio_documentos')
+      .select('id,tipo,establecimiento,nit,nota,estado,archivo_ruta,archivo_tipo,gasto_id,registrado_en')
+      .order('registrado_en',{ascending:false}).limit(1000);
+    if(error)throw error;
+    if((data||[]).length>=1000 && strict)throw Error('Hay demasiados documentos; no puedo garantizar un PDF completo.');
+    docs=data||[];
+    await GFOffline.saveCachedDocs(me.id,docs);
+    render();
+  }catch(e){
+    if(strict)throw e;
+    console.warn('No se actualizaron los documentos relacionados:',e);
+    docs=await GFOffline.getCachedDocs(me.id).catch(()=>[]);
+    render();
+  }
 }
-async function refreshDocs(){
- if(!me)return;
- try{
-   if(!navigator.onLine){docs=await GFOffline.getCachedDocs(me.id);renderDocs();setState('docListStatus','Sin conexión: mostrando último historial de documentos disponible en el teléfono.');return}
-   const {data,error}=await db.from('gastofolio_documentos')
-     .select('id,tipo,establecimiento,nit,nota,estado,archivo_ruta,archivo_tipo,gasto_id,registrado_en')
-     .order('registrado_en',{ascending:false}).limit(1000);
-   if(error)throw error;
-   docs=(data||[]).sort((a,b)=>Number(!!a.archivo_ruta)-Number(!!b.archivo_ruta));
-   await GFOffline.saveCachedDocs(me.id,docs);renderDocs();
- }catch(e){docs=await GFOffline.getCachedDocs(me.id).catch(()=>[]);renderDocs();setState('docListStatus','No se pudieron consultar documentos: '+e.message+'; consulta la sección Pendientes.','error')}
-}
-$('docsList').addEventListener('click',async ev=>{
- const btn=ev.target.closest('button[data-doc-id]');if(!btn)return;
- const doc=docs.find(x=>x.id===btn.dataset.docId);if(!doc)return;
- btn.disabled=true;
- try{
-   if(doc.archivo_ruta){
-     if(!navigator.onLine)throw Error('Para descargar un archivo ya sincronizado necesitas internet.');
-     const {data,error}=await db.storage.from('gastofolio-documentos').download(doc.archivo_ruta);
-     if(error)throw error;
-     saveBlob(data,'GastoFolio_'+doc.tipo+'_'+doc.id.slice(0,8)+(doc.archivo_tipo==='application/pdf'?'.pdf':'.webp'));
-     setState('docListStatus','✅ Documento privado descargado.','ok');
-   }else{GFOffline.documentToAttach=doc.id;$('attachDocFile').click()}
- }catch(e){setState('docListStatus','No se pudo descargar el documento: '+e.message,'error')}
- finally{btn.disabled=false}
-});
 $('attachDocFile').addEventListener('change',async ev=>{
- const file=ev.target.files[0];ev.target.value='';const docId=GFOffline.documentToAttach;
- if(!file||!docId)return;
- try{
-   const prepared=await GFOffline.prepareDocument(file,compressWebp);
-   await GFOffline.enqueueDocFile(docId,prepared);
-   setState('docListStatus','✅ Documento guardado en este teléfono; se sincronizará automáticamente.','ok');
-   GFOffline.sync();
- }catch(e){setState('docListStatus','No se guardó el documento: '+e.message,'error')}
+  const file=ev.target.files[0];ev.target.value='';const docId=GFOffline.documentToAttach;
+  if(!file||!docId)return;
+  try{
+    const prepared=await GFOffline.prepareDocument(file,compressWebp);
+    await GFOffline.enqueueDocFile(docId,prepared);
+    setState('listStatus','RUT guardado en este teléfono; se está sincronizando.','ok');
+    if(navigator.onLine){await GFOffline.sync(true);await refreshDocs();}
+  }catch(e){setState('listStatus','No se guardó el RUT: '+e.message,'error')}
 });
-$('refreshDocs').onclick=refreshDocs;
 $('syncNow').onclick=()=>GFOffline.sync(true);
 // La aplicación se sincroniza al volver internet o recuperar el foco.
 window.addEventListener('online',()=>GFOffline.sync());
@@ -623,7 +596,7 @@ $('exitButton').addEventListener('click',async()=>{
  localStorage.removeItem('gf_last_verified_owner');
  await db.auth.signOut({scope:'local'});
  me=null; entries=[];docs=[];clearSelectedReceipt();
- $('pendingList').replaceChildren();$('docsList').replaceChildren();
+ $('pendingList').replaceChildren();
  $('appHeader').classList.add('hidden');
  $('gastosApp').classList.add('hidden');
  $('loginArea').classList.remove('hidden');
