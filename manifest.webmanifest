@@ -1,11 +1,26 @@
 {
-  "name": "GastoFolio | Mis gastos en orden",
-  "short_name": "GastoFolio",
-  "description": "Registro privado de gastos y documentos con cola sin conexión",
+  "id": "./",
+  "name": "Mantenimiento Bosconia | Control de caja menor",
+  "short_name": "Caja Menor",
+  "description": "Registro privado de gastos y comprobantes, con acceso sin conexion y sincronizacion.",
+  "lang": "es-CO",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f7f6ed",
-  "theme_color": "#073d32",
-  "icons": [{"src":"./icon.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]
+  "background_color": "#ffffff",
+  "theme_color": "#0c5492",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }

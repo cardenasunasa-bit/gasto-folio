@@ -1,8 +1,8 @@
-/* GastoFolio V9 — caché solamente de archivos estáticos públicos.
+/* GastoFolio V10 — caché solamente de archivos estáticos públicos.
    Nunca almacena consultas de Supabase, tokens ni archivos privados.
 */
-const CACHE='gastofolio-shell-v9-20261126a';
-const APP=['./','./index.html','./config.js','./offline-v6.js','./logo.png','./icon.png','./manifest.webmanifest'];
+const CACHE='gastofolio-shell-v10-20261126b';
+const APP=['./','./index.html','./config.js','./offline-v6.js','./logo.png','./icon.png','./icon-192.png','./icon-512.png','./manifest.webmanifest'];
 const VENDORS=[
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',

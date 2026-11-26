@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#073d32">
-<title>GastoFolio | Mis gastos, en orden</title>
-<link rel="icon" type="image/png" href="./icon.png">
+<meta name="theme-color" content="#0c5492">
+<title>Mantenimiento Bosconia | Caja menor</title>
+<link rel="icon" type="image/png" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="manifest" href="./manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./config.js"></script>
@@ -57,9 +58,10 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
 </style>
 </head>
 <body><main class="wrap">
+<section id="installHelp" class="card" style="padding:12px 16px;border-color:#c9d9ed" aria-label="Instalación en Android"><div class="row" style="justify-content:space-between;gap:8px"><div><strong>📲 Instalar en el celular</strong><div class="muted" id="installHint">Abre esta página en Chrome y selecciona ⋮ → Añadir a pantalla principal → Instalar, cuando esté disponible.</div></div><button type="button" id="installPwaBtn" class="secondary" style="font-size:13px">Cómo instalar</button></div></section>
 <div id="loginArea" class="login-layout">
  <section class="card">
-  <img src="./logo.png" class="login-logo" alt="GastoFolio, mis gastos en orden">
+  <img src="./logo.png" class="login-logo" alt="Mantenimiento Bosconia - control de gastos">
   <p style="text-align:center" class="muted">Tu archivo privado de recibos, gastos y fotografías.</p>
   <h2 style="margin-top:22px">Entrar a mis gastos</h2>
   <p class="muted">Utiliza tu correo y la contraseña exclusiva de GastoFolio. No es la contraseña de PIPE NET.</p>
@@ -72,7 +74,7 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
   <p class="tiny">Por seguridad, solo el propietario autorizado puede consultar o guardar información. No hay registro público de usuarios.</p>
  </section>
 </div>
-<header class="card hero hidden" id="appHeader"><div><img class="logo-small" src="./logo.png" alt="GastoFolio"><div class="muted intro">Mis gastos, en orden · Archivo privado de comprobantes</div></div><button type="button" id="exitButton" class="secondary">Cerrar sesión</button></header>
+<header class="card hero hidden" id="appHeader"><div><img class="logo-small" src="./logo.png" alt="Mantenimiento Bosconia"><div class="muted intro">Mis gastos, en orden · Archivo privado de comprobantes</div></div><button type="button" id="exitButton" class="secondary">Cerrar sesión</button></header>
 <section id="gastosApp" class="hidden">
   <div id="networkStatus" class="offline-banner">Comprobando conexión...</div>
   <section class="card">
@@ -712,7 +714,33 @@ window.addEventListener('online',()=>GFOffline.sync());
 window.addEventListener('offline',()=>GFOffline.paintNetwork());
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me){GFOffline.paintNetwork();GFOffline.sync()}});
 setInterval(()=>{if(me&&navigator.onLine&&!document.hidden)GFOffline.sync()},60000);
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('SW no instalado',e)))}
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(e=>console.warn('SW no instalado',e)))}
+
+// Instalación opcional PWA. No solicita ni genera un APK nativo.
+let deferredPwaPrompt=null;
+window.addEventListener('beforeinstallprompt',ev=>{
+  ev.preventDefault();deferredPwaPrompt=ev;
+  const btn=document.getElementById('installPwaBtn');
+  if(btn)btn.textContent='Instalar aplicación';
+});
+window.addEventListener('appinstalled',()=>{
+  deferredPwaPrompt=null;
+  const card=document.getElementById('installHelp');if(card)card.hidden=true;
+});
+if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){
+  document.getElementById('installHelp').hidden=true;
+}
+document.getElementById('installPwaBtn').addEventListener('click',async()=>{
+  if(deferredPwaPrompt){
+    const prompt=deferredPwaPrompt;deferredPwaPrompt=null;
+    await prompt.prompt();
+    const choice=await prompt.userChoice;
+    if(choice.outcome!=='accepted')document.getElementById('installHint').textContent='Si prefieres, utiliza el menú ⋮ de Chrome → Añadir a pantalla principal.';
+  }else{
+    document.getElementById('installHint').textContent='En Chrome Android: abre ⋮ → Añadir a pantalla principal → Instalar (o Crear acceso directo). Una PWA no es un archivo APK descargable.';
+  }
+});
+
 
 $('loginForm').addEventListener('submit',async(e)=>{
  e.preventDefault();
