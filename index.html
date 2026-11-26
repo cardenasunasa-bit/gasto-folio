@@ -41,6 +41,12 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
 .doc-card button{font-size:12px;padding:9px 10px;margin-top:6px}
 .form-tip{font-size:12px;color:#597065;margin:8px 0}
 
+.camera-choice{display:block;width:100%;background:#fff;color:#19593c;border:1px solid #bfd9ca;border-radius:10px;padding:12px;font-size:14px;font-weight:750}
+.camera-overlay{position:fixed;inset:0;z-index:9999;background:#071f19ed;padding:12px;overflow:auto;display:flex;align-items:center;justify-content:center}
+.camera-dialog{width:min(540px,100%);padding:17px;border-radius:18px;background:#fffefa;box-shadow:0 10px 50px #0006}
+.camera-dialog video{display:block;width:100%;max-height:57vh;object-fit:contain;background:#09231d;border-radius:12px}
+.camera-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.camera-buttons button{font-size:14px;padding:13px 8px}
 .proveedor-box{margin-top:16px;padding:16px;border:1px solid #a9d3c1;border-radius:16px;background:#f5fbf6}
 .proveedor-box h3{margin:0 0 6px;font-size:17px;color:#14513e}
 .proveedor-box input[type=checkbox]{width:auto;display:inline-block;accent-color:#0b7258}
@@ -91,11 +97,11 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
       </div>
       <label for="nota">Observación</label><textarea id="nota" maxlength="500" placeholder="Ej. Almuerzo en restaurante o peaje de carretera"></textarea>
       <div class="photo-box">
-        <strong>📎 Adjuntar comprobante en el mismo registro (opcional)</strong>
-        <p class="muted">Acepta PDF (hasta 10 MB) o fotografía (se comprime a WebP, máximo 3 MB). Quedará vinculado al gasto al sincronizar.</p>
+        <strong>🧾 FACTURA del gasto (fotografía o PDF, opcional)</strong>
+        <p class="muted">«Tomar foto» abre una cámara ligera dentro de GastoFolio (necesita permiso de cámara, no conexión). También puedes elegir fotos desde la galería o PDF. Las fotos se comprimen a WebP (hasta 3 MB).</p>
         <div class="photo-actions">
-          <label for="captureCamera"><span>📸 Tomar foto</span><input type="file" id="captureCamera" accept="image/*" capture="environment"></label>
-          <label for="chooseGallery"><span>📂 Elegir PDF o imagen</span><input type="file" id="chooseGallery" accept="application/pdf,.pdf,image/*"></label>
+          <button type="button" id="openCamera" class="camera-choice">📸 Tomar foto (cámara ligera)</button>
+          <label for="chooseGallery"><span>📂 Elegir FACTURA (PDF o foto)</span><input type="file" id="chooseGallery" accept="application/pdf,.pdf,image/*"></label>
         </div>
         <div id="fileLabel" class="muted" style="margin-top:9px">Sin comprobante seleccionado</div>
         <img id="photoPreview" alt="Vista previa de comprobante" class="hidden">
@@ -112,7 +118,7 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
             <input id="docNit" maxlength="32" placeholder="Ej. 900123456-7"></div>
         </div>
         <div class="file-line">
-          <label for="docRutFile">📄 RUT del establecimiento (PDF o fotografía)</label>
+          <label for="docRutFile">📄 RUT del establecimiento (PDF o foto)</label>
           <input type="file" id="docRutFile" accept="application/pdf,.pdf,image/*">
           <label class="checkbox-row" for="docRutPendiente"><input type="checkbox" id="docRutPendiente"><span>El RUT todavía no me lo entregaron: guardar como pendiente</span></label>
         </div>
@@ -128,11 +134,23 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
     </form>
     <div id="saveStatus" class="status" aria-live="polite">Con internet se confirma la sincronización en Supabase. Sin conexión, el gasto y sus archivos se conservan juntos en este teléfono hasta poder enviarlos.</div>
   </section>
-  <section class="card"><h2>📂 Historial por categorías</h2><div class="filters"><div><label for="filterCategoria">Categoría</label><select id="filterCategoria"><option value="">Todas las categorías</option><option value="comida">Comida</option><option value="combustible">Combustible</option><option value="peajes">Peajes</option><option value="calibracion_llantas">Calibración de llantas</option><option value="agua">Agua</option><option value="otros">Otros</option></select></div><div><label for="filterMes">Mes (opcional)</label><input type="month" id="filterMes"></div></div><div class="row" style="margin-top:13px"><button type="button" id="refreshExpenses" class="secondary">Actualizar</button><button type="button" id="exportPdf">📄 Descargar PDF completo (gasto + RUT)</button><button type="button" id="exportCsv" class="secondary">Descargar informe CSV</button><button type="button" id="exportZip" class="secondary">Descargar gastos + fotos (ZIP)</button></div><p class="muted">Cada gasto ocupa su primera hoja con el valor, la fecha, la observación y la foto del recibo. Después vienen las hojas del RUT y la cuenta de cobro vinculados. Con una foto del recibo y un RUT de una sola página, el resultado tendrá 2 hojas. Si un PDF original tiene varias, se conservan todas. Descarga el informe después de sincronizar.</p><div id="listStatus" class="status" aria-live="polite">Consultando registros…</div><div class="expenses" id="expensesList"></div></section>
+  <section class="card"><h2>📂 Historial por categorías</h2><div class="filters"><div><label for="filterCategoria">Categoría</label><select id="filterCategoria"><option value="">Todas las categorías</option><option value="comida">Comida</option><option value="combustible">Combustible</option><option value="peajes">Peajes</option><option value="calibracion_llantas">Calibración de llantas</option><option value="agua">Agua</option><option value="otros">Otros</option></select></div><div><label for="filterMes">Mes (opcional)</label><input type="month" id="filterMes"></div></div><div class="row" style="margin-top:13px"><button type="button" id="refreshExpenses" class="secondary">Actualizar</button><button type="button" id="exportPdf">📄 Descargar PDF completo (gasto + RUT)</button><button type="button" id="exportCsv" class="secondary">Descargar informe CSV</button><button type="button" id="exportZip" class="secondary">Descargar gastos + fotos (ZIP)</button></div><p class="muted">La primera hoja se identifica como FACTURA e incluye valor, fecha, hora, observación y foto del recibo. Cada RUT adjunto lleva el título RUT, sea foto o PDF. Después vienen las hojas del RUT y la cuenta de cobro vinculados. Con una foto del recibo y un RUT de una sola página, el resultado tendrá 2 hojas. Si un PDF original tiene varias, se conservan todas. Descarga el informe después de sincronizar.</p><div id="listStatus" class="status" aria-live="polite">Consultando registros…</div><div class="expenses" id="expensesList"></div></section>
 </section>
 <section id="previewModal" class="card hidden preview" aria-label="Vista previa del comprobante"><div class="row"><button id="closePreview" type="button" class="secondary">Cerrar foto</button><a id="downloadPreview" class="btn" download="comprobante.webp">Descargar foto</a></div><img id="previewImage" alt="Foto del comprobante"></section>
 <input id="attachPhoto" type="file" accept="application/pdf,.pdf,image/*" class="hidden" aria-label="Adjuntar PDF o fotografía a un gasto existente">
 <input id="attachDocFile" type="file" accept="application/pdf,.pdf,image/*" class="hidden" aria-label="Adjuntar documento existente">
+<div id="cameraPanel" class="camera-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="cameraHeading">
+  <div class="camera-dialog">
+    <h2 id="cameraHeading">📸 Fotografiar FACTURA</h2>
+    <p class="muted">Coloca el recibo dentro del encuadre. La cámara usa una resolución moderada para ahorrar memoria.</p>
+    <video id="cameraVideo" autoplay muted playsinline aria-label="Vista de la cámara"></video>
+    <div id="cameraStatus" class="status" aria-live="polite">Preparando cámara…</div>
+    <div class="camera-buttons">
+      <button type="button" id="cameraSnap">📷 Capturar factura</button>
+      <button type="button" id="cameraCancel" class="secondary">Cancelar</button>
+    </div>
+  </div>
+</div>
 </main>
 <script>
 'use strict';
@@ -154,7 +172,7 @@ function clearSelectedReceipt(){
   photoObjectUrl=null;
   $('photoPreview').classList.add('hidden');$('photoPreview').removeAttribute('src');
   $('fileLabel').textContent='Sin comprobante seleccionado';$('clearPhoto').classList.add('hidden');
-  $('captureCamera').value='';$('chooseGallery').value='';
+  $('chooseGallery').value='';
 }
 function selectReceipt(file){
   if(!file)return;
@@ -171,12 +189,116 @@ function selectReceipt(file){
   $('clearPhoto').classList.remove('hidden');
   $('fileLabel').textContent=(isPdf?'📄 PDF: ':'🖼️ Foto: ')+(file.name||'comprobante')+' · '+(file.size/1024/1024).toFixed(2)+' MB';
 }
-$('captureCamera').addEventListener('change',e=>selectReceipt(e.target.files[0]));
 $('chooseGallery').addEventListener('change',e=>selectReceipt(e.target.files[0]));
 $('clearPhoto').onclick=clearSelectedReceipt;
-function imageLoad(file){return new Promise((resolve,reject)=>{const img=new Image(),src=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(src);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(src);reject(new Error('No se pudo abrir la fotografía.'))};img.src=src})}
+
+// Camara interna de baja resolucion. Evita que el selector nativo de Android
+// genere una foto enorme antes de entregarla al navegador (memoria insuficiente).
+let cameraStream=null, cameraOpening=false, cameraGeneration=0;
+const cameraVideo=$('cameraVideo');
+function closeCamera(){
+  cameraGeneration++;
+  if(cameraStream){for(const track of cameraStream.getTracks())track.stop();cameraStream=null;}
+  cameraVideo.pause();cameraVideo.srcObject=null;
+  $('cameraSnap').disabled=true;
+  $('cameraPanel').classList.add('hidden');
+}
+async function openLightCamera(){
+  if(cameraOpening||cameraStream)return;
+  if(!navigator.mediaDevices?.getUserMedia){
+    setState('saveStatus','Este navegador no permite abrir la camara integrada. Usa la camara normal del telefono y luego «Elegir FACTURA (PDF o foto)».','error');
+    return;
+  }
+  cameraOpening=true;
+  const generation=++cameraGeneration;
+  $('cameraPanel').classList.remove('hidden');
+  $('cameraSnap').disabled=true;
+  setState('cameraStatus','Solicitando permiso para usar la camara…');
+  try{
+    // Ideal 1280x960, sin pedir imagenes de 12, 48 o 64 megapixeles.
+    const stream=await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960},frameRate:{ideal:20,max:30}}
+    });
+    if(generation!==cameraGeneration){stream.getTracks().forEach(t=>t.stop());return;}
+    cameraStream=stream;
+    cameraVideo.srcObject=stream;
+    await cameraVideo.play();
+    if(generation!==cameraGeneration)return;
+    $('cameraSnap').disabled=false;
+    setState('cameraStatus','Apunta al recibo y pulsa «Capturar factura».','ok');
+  }catch(error){
+    const msg=error?.name==='NotAllowedError'?'Permiso de camara denegado. Revisa los permisos del sitio en Chrome.':
+      error?.name==='NotReadableError'?'La camara esta ocupada o Android no pudo iniciarla. Cierra otras aplicaciones que la usen.':
+      'No se pudo abrir la camara de baja memoria: '+(error?.message||'error desconocido')+'.';
+    closeCamera();
+    setState('saveStatus',msg+' Puedes tomar una foto con la camara normal y elegirla desde la galeria.','error');
+  }finally{cameraOpening=false;}
+}
+async function captureLightPhoto(){
+  if(!cameraStream||cameraVideo.readyState<2||!cameraVideo.videoWidth){
+    setState('cameraStatus','La camara aun no esta lista. Intenta nuevamente.','error');return;
+  }
+  const button=$('cameraSnap');button.disabled=true;
+  let canvas;
+  try{
+    const sourceW=cameraVideo.videoWidth,sourceH=cameraVideo.videoHeight;
+    const ratio=Math.min(1,1280/Math.max(sourceW,sourceH));
+    canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(sourceW*ratio));
+    canvas.height=Math.max(1,Math.round(sourceH*ratio));
+    const ctx=canvas.getContext('2d',{alpha:false});
+    if(!ctx)throw Error('El navegador no pudo preparar la fotografia.');
+    ctx.drawImage(cameraVideo,0,0,canvas.width,canvas.height);
+    let blob=await encodeWebp(canvas,.78);
+    if(!blob||blob.type!=='image/webp')throw Error('Este navegador no pudo convertir la captura a WebP.');
+    if(blob.size>3*1024*1024){
+      blob=await encodeWebp(canvas,.56);
+      if(!blob||blob.size>3*1024*1024)throw Error('La captura supera el limite de 3 MB.');
+    }
+    // Liberar el canvas y cerrar el video antes de mostrar la vista previa.
+    canvas.width=1;canvas.height=1;canvas=null;
+    const name='factura_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webp';
+    const file=new File([blob],name,{type:'image/webp',lastModified:Date.now()});
+    closeCamera();
+    selectReceipt(file);
+    setState('saveStatus','✅ Fotografia lista y comprimida ('+(blob.size/1024).toFixed(0)+' KB). Completa el gasto y pulsa Guardar.','ok');
+  }catch(error){
+    setState('cameraStatus','No se pudo preparar la foto: '+error.message+'. Puedes cerrar y usar «Elegir FACTURA».','error');
+    button.disabled=false;
+  }finally{
+    if(canvas){canvas.width=1;canvas.height=1;}
+  }
+}
+$('openCamera').addEventListener('click',openLightCamera);
+$('cameraSnap').addEventListener('click',captureLightPhoto);
+$('cameraCancel').addEventListener('click',closeCamera);
+document.addEventListener('visibilitychange',()=>{if(document.hidden && cameraStream)closeCamera();});
+window.addEventListener('pagehide',closeCamera);
+
+function imageLoad(file){return new Promise((resolve,reject)=>{const img=new Image(),src=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(src);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(src);reject(new Error('No se pudo abrir la fotografia.'))};img.src=src})}
 function encodeWebp(canvas,quality){return new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality))}
-async function compressWebp(file){const img=await imageLoad(file);let longest=2200;for(let attempt=0;attempt<6;attempt++){const scale=Math.min(1,longest/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingQuality='high';ctx.drawImage(img,0,0,canvas.width,canvas.height);const blob=await encodeWebp(canvas,attempt<2?.9:.82);if(blob?.type==='image/webp'&&blob.size<=3*1024*1024)return blob;longest=Math.round(longest*.82)}throw new Error('No fue posible preparar una imagen WebP de máximo 3 MB. Intenta otra foto.')}
+async function compressWebp(file){
+  // La foto capturada por la camara ligera ya esta comprimida: no volver a decodificarla.
+  if(file.type==='image/webp' && file.size>0 && file.size<=3*1024*1024)return file;
+  const img=await imageLoad(file);
+  let longest=1600;
+  for(let attempt=0;attempt<6;attempt++){
+    const scale=Math.min(1,longest/Math.max(img.naturalWidth,img.naturalHeight));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+    canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+    const ctx=canvas.getContext('2d',{alpha:false});
+    if(!ctx)throw Error('Memoria insuficiente para procesar esta imagen. Elige una foto de menor resolucion.');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.imageSmoothingQuality='medium';ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    const blob=await encodeWebp(canvas,attempt<2?.85:.72);
+    canvas.width=1;canvas.height=1;
+    if(blob?.type==='image/webp'&&blob.size<=3*1024*1024)return blob;
+    longest=Math.max(600,Math.round(longest*.8));
+  }
+  throw Error('No fue posible preparar una foto WebP de maximo 3 MB. Intenta otra foto.');
+}
 async function confirmOwner(){
   if(!window.GFOffline || window.GFOffline.version !== '6.0.0' ||
      typeof window.GFOffline.enqueueExpenseBundle !== 'function'){
@@ -405,7 +527,7 @@ function addExpensePdfPage(doc,g,i,total,image,isAttachedPdf=false){
   const pageW=210, margin=17;
   doc.setTextColor(28,28,28);
   doc.setFont('helvetica','bold');doc.setFontSize(13);
-  doc.text('COMPROBANTE DE GASTO',margin,22);
+  doc.text(image || isAttachedPdf ? 'FACTURA' : 'REGISTRO DE GASTO',margin,22);
   doc.setDrawColor(215,215,215);doc.line(margin,27,pageW-margin,27);
   const fields=[
     ['Categoría',pdfCategory(g.categoria)],
@@ -428,7 +550,7 @@ function addExpensePdfPage(doc,g,i,total,image,isAttachedPdf=false){
   const top=Math.max(107,y+12+noteLines.length*5);
   doc.setDrawColor(221,221,221);doc.line(margin,top-10,pageW-margin,top-10);
   doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(50,50,50);
-  doc.text(isAttachedPdf?'COMPROBANTE ORIGINAL EN LAS HOJAS SIGUIENTES':'COMPROBANTE ADJUNTO',margin,top-4);
+  doc.text(isAttachedPdf?'FACTURA ORIGINAL EN LAS HOJAS SIGUIENTES':'FACTURA',margin,top-4);
   if(image){
     const areaW=pageW-2*margin,areaH=277-top;
     if(areaH<20)throw Error('La observación ocupa demasiado espacio para mostrar el recibo.');
@@ -454,7 +576,7 @@ function loadPdfLib(){
  }).catch(e=>{pdfLibPromise=null;throw e});
  return pdfLibPromise;
 }
-async function copyPdfPages(target, sourceBytes, context){
+async function copyPdfPages(target, sourceBytes, context, etiqueta=''){
  let source;
  try{source=await window.PDFLib.PDFDocument.load(sourceBytes)}
  catch(e){throw Error('El PDF de '+context+' está protegido, dañado o no se pudo abrir: '+e.message)}
@@ -462,7 +584,20 @@ async function copyPdfPages(target, sourceBytes, context){
  if(count>40)throw Error('El PDF de '+context+' tiene demasiadas páginas ('+count+').');
  const indices=Array.from({length:count},(_,i)=>i);
  const copied=await target.copyPages(source,indices);
- copied.forEach(page=>target.addPage(page));
+ // Crear un encabezado visible SIN tapar el PDF que nos entregaron.
+ // Se amplía la hoja hacia arriba; así conservamos toda la información original.
+ const titulo=String(etiqueta||'').trim().toUpperCase();
+ const font=titulo ? await target.embedFont(window.PDFLib.StandardFonts.HelveticaBold) : null;
+ for(const page of copied){
+   if(font){
+     const {width,height}=page.getSize();
+     const header=38;
+     page.setSize(width,height+header);
+     page.drawRectangle({x:0,y:height,width,height:header,color:window.PDFLib.rgb(1,1,1)});
+     page.drawText(titulo,{x:22,y:height+13,size:14,font,color:window.PDFLib.rgb(0.13,0.13,0.13)});
+   }
+   target.addPage(page);
+ }
 }
 async function appendPhotoDocument(target,JsPDF,entry,blob){
   // Documento en página blanca sin datos o marca adicionales impresos encima.
@@ -506,14 +641,14 @@ async function exportPdf(rows,button){
      addExpensePdfPage(sheet,g,i,rows.length,photo,receiptPdf);
      await copyPdfPages(combined,sheet.output('arraybuffer'),'ficha de gasto');
      // Cuando el recibo es un PDF, conservar íntegramente su contenido detrás de la ficha.
-     if(receiptPdf&&receipt)await copyPdfPages(combined,await receipt.arrayBuffer(),'factura de gasto '+g.id);
+     if(receiptPdf&&receipt)await copyPdfPages(combined,await receipt.arrayBuffer(),'factura de gasto '+g.id,'FACTURA');
      const linked=docs.filter(x=>x.gasto_id===g.id);
      for(const d of linked){
        if(!d.archivo_ruta)continue; // Pendiente: queda listado en el historial, no inventar hoja.
        const {data,error}=await db.storage.from('gastofolio-documentos').download(d.archivo_ruta);
        if(error)throw Error('No se pudo obtener el '+(docNames[d.tipo]||d.tipo)+' de '+d.establecimiento+': '+error.message);
        if(d.archivo_tipo==='application/pdf'||/\.pdf$/i.test(d.archivo_ruta))
-         await copyPdfPages(combined,await data.arrayBuffer(),(docNames[d.tipo]||'documento')+' de '+d.establecimiento);
+         await copyPdfPages(combined,await data.arrayBuffer(),(docNames[d.tipo]||'documento')+' de '+d.establecimiento,docNames[d.tipo]||'DOCUMENTO');
        else await appendPhotoDocument(combined,JsPDF,d,data);
      }
    }
@@ -521,7 +656,7 @@ async function exportPdf(rows,button){
    const bytes=await combined.save();
    const filename='comprobantes_y_documentos_'+new Date().toISOString().slice(0,10)+(rows.length===1?'_'+rows[0].id.slice(0,8):'')+'.pdf';
    saveBlob(new Blob([bytes],{type:'application/pdf'}),filename);
-   setState('listStatus','✅ PDF descargado con '+combined.getPageCount()+' página(s): fichas, comprobantes y RUT/cuentas de cobro recibidos. Revisa la descarga antes de borrar originales.','ok');
+   setState('listStatus','✅ PDF descargado con '+combined.getPageCount()+' página(s). Las hojas están identificadas como FACTURA, RUT o CUENTA DE COBRO. Revisa la descarga antes de borrar originales.','ok');
  }catch(e){
    setState('listStatus','No se pudo completar el PDF: '+e.message+'. Todos los archivos originales permanecen intactos.','error');
  }finally{if(button)button.disabled=false}
@@ -595,7 +730,7 @@ $('loginForm').addEventListener('submit',async(e)=>{
 $('exitButton').addEventListener('click',async()=>{
  localStorage.removeItem('gf_last_verified_owner');
  await db.auth.signOut({scope:'local'});
- me=null; entries=[];docs=[];clearSelectedReceipt();
+ closeCamera();me=null; entries=[];docs=[];clearSelectedReceipt();
  $('pendingList').replaceChildren();
  $('appHeader').classList.add('hidden');
  $('gastosApp').classList.add('hidden');
