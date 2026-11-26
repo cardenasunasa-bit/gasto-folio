@@ -10,7 +10,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./config.js"></script>
-<script src="./offline-v6.js?v=12"></script>
+<script src="./offline-v6.js?v=13"></script>
 <style>
 
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#173c32;background:#f7f6ed}*{box-sizing:border-box}
@@ -27,10 +27,10 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
 .sum{background:#ecf6ee;padding:16px;border-radius:15px;border:1px solid #d8eadb}.sum small{display:block;color:#51695e}.sum strong{font-size:22px;color:#0a604a}
 .filters{display:grid;grid-template-columns:1fr 1fr;gap:12px}.expenses{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.expense{border:1px solid #dfe7dc;border-radius:15px;padding:15px;background:#fff}.expense-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
 .pill{font-size:12px;background:#e7f3e7;color:#235b3e;border-radius:20px;padding:5px 9px;font-weight:750}.expense .amount{font-weight:850;font-size:21px;margin:10px 0 5px}.expense .note{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:20px}.expense .meta{font-size:12px;color:#6e7f75;margin:6px 0}.expense .row button{font-size:12px;padding:9px 10px}.annulled{opacity:.62}
-.photo-box{background:#f4faf4;border:1px dashed #a9c8b5;border-radius:14px;padding:12px}.photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.photo-actions label{margin:0}.photo-actions input{position:absolute;left:-9999px;max-width:1px;opacity:0}.photo-actions span{display:block;padding:12px;border:1px solid #bfd9ca;border-radius:10px;text-align:center;background:#fff;color:#19593c;font-weight:750;font-size:14px;cursor:pointer}
+.photo-box{background:#f4faf4;border:1px dashed #a9c8b5;border-radius:14px;padding:12px}.photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.photo-actions label{margin:0;display:block;position:relative}.photo-actions .camera-choice{height:100%;min-height:52px}.photo-actions input{position:absolute;left:-9999px;max-width:1px;opacity:0}.photo-actions span{display:block;padding:12px;border:1px solid #bfd9ca;border-radius:10px;text-align:center;background:#fff;color:#19593c;font-weight:750;font-size:14px;cursor:pointer}
 #photoPreview{max-width:100%;max-height:260px;border-radius:8px;display:block;margin:10px auto}.preview{background:#f1f8ef;border-radius:12px;padding:12px;margin-top:12px}.preview img{display:block;max-width:100%;max-height:65vh;margin:auto;border-radius:8px}.preview .row{justify-content:flex-end}
 .logo{display:block;width:min(390px,100%);height:auto;border-radius:15px}.logo-small{display:block;width:min(290px,100%);height:auto;border-radius:10px}.hero{background:#f9faf2;display:flex;align-items:center;justify-content:space-between;gap:22px}.intro{border-left:4px solid #f17860;padding-left:12px}.login-layout{max-width:470px;margin:7vh auto 0}.login-layout .card{padding:24px}.login-layout h2{font-size:22px}.login-fields{margin-top:18px}.login-fields button{width:100%;margin-top:16px}.login-logo{display:block;max-width:100%;width:430px;margin:auto}.tiny{font-size:12px;color:#587568}.tag{display:inline-flex;border-radius:99px;background:#ebeee7;color:#2c644a;padding:7px 10px;font-size:12px;font-weight:700}
-@media(max-width:500px){body{padding:10px}.card{padding:15px}.filters{grid-template-columns:1fr}.row button,.row .btn{flex:1}.expenses{grid-template-columns:1fr}h1{font-size:23px}.login-layout{margin:3vh auto 0}.hero{align-items:flex-start}.logo-small{max-width:250px}}
+@media(max-width:500px){.photo-actions{grid-template-columns:1fr}.photo-actions .camera-choice{min-height:48px}body{padding:10px}.card{padding:15px}.filters{grid-template-columns:1fr}.row button,.row .btn{flex:1}.expenses{grid-template-columns:1fr}h1{font-size:23px}.login-layout{margin:3vh auto 0}.hero{align-items:flex-start}.logo-small{max-width:250px}}
 
 .offline-banner{padding:12px 16px;border-radius:13px;background:#ffefd2;color:#6b4e16;margin:12px 0;font-weight:700}
 .offline-banner.online{background:#e2f4e7;color:#19643e}
@@ -124,9 +124,11 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
         </div>
         <div class="file-line">
           <strong>📄 RUT del establecimiento</strong>
-          <button type="button" class="camera-choice" id="cameraRut">📸 Tomar foto del RUT (misma cámara que FACTURA)</button>
-          <label class="file-picker" for="docRutFile">📂 Elegir PDF o foto guardada del RUT</label>
-          <input class="doc-picker-input" type="file" id="docRutFile" accept="application/pdf,.pdf,image/*">
+          <p class="muted">Usa «Tomar foto» para abrir la misma cámara ligera de FACTURA. «Elegir» es solo para PDF o imágenes ya guardadas.</p>
+          <div class="photo-actions">
+            <button type="button" class="camera-choice" id="cameraRut">📸 Tomar foto del RUT (cámara ligera)</button>
+            <label for="docRutFile"><span>📂 Elegir RUT (PDF o foto guardada)</span><input type="file" id="docRutFile" accept="application/pdf,.pdf,image/*"></label>
+          </div>
           <div id="rutCameraStatus" class="muted" aria-live="polite">Sin foto de RUT seleccionada</div>
           <img id="rutPhotoPreview" class="hidden document-preview" alt="Vista previa del RUT">
           <button type="button" id="rutPhotoClear" class="secondary hidden">Quitar foto del RUT</button>
@@ -134,9 +136,11 @@ button,.btn{display:inline-block;background:#0a6650;color:white;border:0;border-
         </div>
         <div class="file-line">
           <strong>🧾 Cuenta de cobro (opcional)</strong>
-          <button type="button" class="camera-choice" id="cameraCuenta">📸 Tomar foto de cuenta de cobro (misma cámara que FACTURA)</button>
-          <label class="file-picker" for="docCuentaFile">📂 Elegir PDF o foto guardada de cuenta de cobro</label>
-          <input class="doc-picker-input" type="file" id="docCuentaFile" accept="application/pdf,.pdf,image/*">
+          <p class="muted">«Tomar foto» abre exactamente la misma cámara ligera de FACTURA.</p>
+          <div class="photo-actions">
+            <button type="button" class="camera-choice" id="cameraCuenta">📸 Tomar foto de cuenta de cobro (cámara ligera)</button>
+            <label for="docCuentaFile"><span>📂 Elegir cuenta de cobro (PDF o foto guardada)</span><input type="file" id="docCuentaFile" accept="application/pdf,.pdf,image/*"></label>
+          </div>
           <div id="cuentaCameraStatus" class="muted" aria-live="polite">Sin foto de cuenta de cobro seleccionada</div>
           <img id="cuentaPhotoPreview" class="hidden document-preview" alt="Vista previa de la cuenta de cobro">
           <button type="button" id="cuentaPhotoClear" class="secondary hidden">Quitar foto de cuenta de cobro</button>
@@ -246,6 +250,7 @@ $('docCuentaFile').addEventListener('change',()=>{if($('docCuentaFile').files.le
 $('rutPhotoClear').addEventListener('click',()=>clearDocumentPhoto('rut'));
 $('cuentaPhotoClear').addEventListener('click',()=>clearDocumentPhoto('account'));
 function startCameraFor(target,recordId=null){
+  if(!Object.prototype.hasOwnProperty.call(CAMERA_NAMES,target))return;
   cameraTarget=target;
   cameraExpenseId=target==='existingExpense'?recordId:null;
   cameraDocumentId=target==='existingRut'?recordId:null;
